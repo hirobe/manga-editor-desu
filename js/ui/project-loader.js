@@ -240,12 +240,20 @@ return new fabric.Textbox(spec.text||'',opts);
 
 function createVerticalTextboxLayer(spec){
 if(typeof fabric.VerticalTextbox==='function'){
+// 縦書きはテキスト領域の左上ではなく、領域内に中央寄せで配置する(ネイティブ準拠)。
+// VerticalTextboxのwidthは列数から自動算出されるため設定しない。heightが
+// 縦列の折返し長になるので、領域の高さ(無ければ幅で近似)を渡す。
+const areaW=numOr(spec.width,0);
+const colLen=numOr(spec.height,areaW);
 const opts={
-left:numOr(spec.left,0),
+left:numOr(spec.left,0)+areaW/2,
 top:numOr(spec.top,0),
-fontSize:numOr(spec.fontSize,16)
+fontSize:numOr(spec.fontSize,16),
+originX:'center',
+originY:'top',
+textAlign:'center'
 };
-if(spec.width!==undefined) opts.width=spec.width;
+if(colLen) opts.height=colLen;
 if(spec.fontFamily) opts.fontFamily=spec.fontFamily;
 if(spec.fill) opts.fill=spec.fill;
 return new fabric.VerticalTextbox(spec.text||'',opts);
