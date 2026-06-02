@@ -97,4 +97,14 @@ await FolderPicker.getCurrent()      // 保存済み {path, displayPath, timesta
 - 永続化: `localforage.createInstance({name:'folderPicker'})`、キー `currentProjectPath`
 - 閲覧スコープ: バックエンドで $HOME 配下に限定
 - メニュー: File > 「プロジェクトを開く」(`#projectFolderOpen`)
-- 選択時は `createToast` で通知するのみ（後続のロード処理は未実装）
+- 選択時 `window.ProjectLoader.loadFromFolder(path, displayPath)` を呼ぶ
+
+## プロジェクトローダ（project-loader.js）
+フォルダ内の `pXXX_page.svg` (XXX は数字) を XXX 数値順にページとして取り込む。
+```javascript
+await window.ProjectLoader.loadFromFolder(homeRelativePath, displayPath)
+```
+- `/api/files?pattern=^p\d+_page\.svg$` で列挙、ファイル名から `parseInt` で数値ソート
+- `/api/file` で各 SVG を取得 → `fabric.loadSVGFromString` → `addInitialImageToCanvas`
+- 各ページごとに `setCanvasGUID(generateGUID())` + `canvas.clear()` + `btmSaveProjectFile(guid,false)`
+- 既存 `btmProjectsMap` は全クリアして新規プロジェクトとして再構築

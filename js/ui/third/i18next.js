@@ -10,6 +10,48 @@
 // },
 //マージされるので追加日ごとにyyyyMMddHHmmss_SSSをTopKeyに入れます。個別の翻訳はKey名・翻訳文を任意に付けてください。ただし被らないように。
 const resources = {
+"20260602180000_001":{
+"ja":{
+"projectLoaderLoaded":"プロジェクトを読み込みました",
+"projectLoaderNoPages":"pXXX_page.svg が見つかりません",
+"projectLoaderError":"プロジェクトの読み込みに失敗しました"
+},
+"en":{
+"projectLoaderLoaded":"Project loaded",
+"projectLoaderNoPages":"No pXXX_page.svg files found",
+"projectLoaderError":"Failed to load project"
+},
+"ko":{
+"projectLoaderLoaded":"프로젝트를 불러왔습니다",
+"projectLoaderNoPages":"pXXX_page.svg 파일을 찾을 수 없습니다",
+"projectLoaderError":"프로젝트를 불러오지 못했습니다"
+},
+"fr":{
+"projectLoaderLoaded":"Projet chargé",
+"projectLoaderNoPages":"Aucun fichier pXXX_page.svg trouvé",
+"projectLoaderError":"Échec du chargement du projet"
+},
+"zh":{
+"projectLoaderLoaded":"项目已加载",
+"projectLoaderNoPages":"未找到 pXXX_page.svg 文件",
+"projectLoaderError":"加载项目失败"
+},
+"ru":{
+"projectLoaderLoaded":"Проект загружен",
+"projectLoaderNoPages":"Файлы pXXX_page.svg не найдены",
+"projectLoaderError":"Не удалось загрузить проект"
+},
+"es":{
+"projectLoaderLoaded":"Proyecto cargado",
+"projectLoaderNoPages":"No se encontraron archivos pXXX_page.svg",
+"projectLoaderError":"Error al cargar el proyecto"
+},
+"de":{
+"projectLoaderLoaded":"Projekt geladen",
+"projectLoaderNoPages":"Keine pXXX_page.svg-Dateien gefunden",
+"projectLoaderError":"Projekt konnte nicht geladen werden"
+}
+},
 "20260602100000_001":{
 "ja":{
 "folderPickerOpen":"プロジェクトを開く",
