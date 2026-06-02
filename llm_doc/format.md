@@ -158,6 +158,7 @@
 ```
 
 - 縦書きは `type="vertical-textbox"`
+- `left`/`top`/`width`/`height` はテキスト領域(矩形)を表す。ローダは領域内に中央寄せ(`originX:center`)で配置する。縦書きの `height` は縦列の折返し長として使われるため、領域の高さを指定する(省略時は `width` で近似)
 - フォントは `js/core/font/` に登録済みのもの推奨。未登録だと別フォントにフォールバックされない (fallback禁止方針)
 
 #### 吹き出し (`customType="speechBubbleSVG"`)
