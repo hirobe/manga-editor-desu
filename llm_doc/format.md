@@ -163,7 +163,10 @@
 
 #### 吹き出し (`customType="speechBubbleSVG"`)
 
-吹き出しはテキストと SVG パスの組合せ。グループ単位で定義:
+吹き出しはテキストと SVG パスの組合せ。JSON 上はグループ単位で定義するが、**ローダはグループにまとめず、本体(シェイプ)とテキストを別オブジェクトとして展開して配置する** (`addSpeechBubbleSeparate`)。
+- 本体: シェイプ(path/polygon/rect)を `customType="speechBubbleSVG"` のオブジェクトにし、グループの `guid`/`relatedPoly` を引き継ぐ。`guids` には配下テキストの guid を入れる
+- テキスト: 独立した通常のテキストオブジェクト。`relatedPoly` で本体を参照
+- 子のローカル座標はグループの `left`/`top` を足して絶対座標化する
 
 ```json
 {

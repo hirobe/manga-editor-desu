@@ -101,12 +101,50 @@ await btmSaveProjectFile(newGuid,false);
 }
 
 async function addLayerWithChildren(spec,pagesBasePath){
+// 吹き出しはグループにまとめず、本体(シェイプ)とテキストを別オブジェクトで配置する。
+if(spec&&spec.type==='group'&&spec.customType==='speechBubbleSVG'){
+await addSpeechBubbleSeparate(spec,pagesBasePath);
+return;
+}
 const obj=await enlivenLayer(spec,pagesBasePath);
 if(obj) canvas.add(obj);
 if(spec.type!=='group'&&Array.isArray(spec.children)){
 for(const childSpec of spec.children){
 await addLayerWithChildren(childSpec,pagesBasePath);
 }
+}
+}
+
+// 吹き出しグループを「本体シェイプ(speechBubbleSVG)」と「テキスト(通常のテキスト)」の
+// 2オブジェクトに分けて配置する。子のローカル座標はグループのleft/topを足して絶対化する。
+async function addSpeechBubbleSeparate(spec,pagesBasePath){
+const gx=numOr(spec.left,0);
+const gy=numOr(spec.top,0);
+const children=Array.isArray(spec.children)?spec.children:[];
+const shapeSpec=children.find(c=>c&&(c.type==='path'||c.type==='polygon'||c.type==='rect'));
+const textSpec=children.find(c=>c&&(c.type==='vertical-textbox'||c.type==='textbox'||c.type==='text'||c.type==='i-text'));
+
+let bubble=null;
+if(shapeSpec){
+bubble=await enlivenLayer({...shapeSpec,left:gx+numOr(shapeSpec.left,0),top:gy+numOr(shapeSpec.top,0)},pagesBasePath);
+}
+let text=null;
+if(textSpec){
+text=await enlivenLayer({...textSpec,left:gx+numOr(textSpec.left,0),top:gy+numOr(textSpec.top,0)},pagesBasePath);
+}
+
+if(bubble){
+bubble.customType='speechBubbleSVG';
+if(spec.guid) bubble.guid=spec.guid;
+if(spec.name) bubble.name=spec.name;
+if(spec.relatedPoly) bubble.relatedPoly=spec.relatedPoly;
+// reSetSpeechBubbleTextがobj.guidsを参照するため必ず配列を持たせる。
+bubble.guids=(text&&text.guid)?[text.guid]:[];
+canvas.add(bubble);
+}
+if(text){
+if(bubble&&bubble.guid) text.relatedPoly=bubble.guid;
+canvas.add(text);
 }
 }
 
