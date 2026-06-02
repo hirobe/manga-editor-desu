@@ -113,7 +113,8 @@
 ```
 
 - `src`: `page.json` からの相対パス。`assets/...` を推奨。`data:` URL も許容
-- `clipPath`: 省略可。指定が無く `relatedPoly` がパネルを指す場合、ローダがパネル形状から自動生成
+- `width`/`height` はコマ(配置領域)のサイズ。ローダは**元画像のアスペクト比を保ったまま**、領域を埋めるよう拡縮する(cover/slice相当: `scale=max(width/imgW,height/imgH)`)。余白は出さず、はみ出した分は領域でクリップする。領域中央に配置
+- クリップは画像相対(非`absolutePositioned`)の矩形で、画像と一体でスケール・移動する。矩形コマは `js/fabric/fabric-management.js` の `updateRectClipPath` が再読込時に再生成する
 
 #### パネル/コマ (矩形/多角形, `isPanel=true`)
 
