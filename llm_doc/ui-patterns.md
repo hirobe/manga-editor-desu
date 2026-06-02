@@ -100,11 +100,12 @@ await FolderPicker.getCurrent()      // 保存済み {path, displayPath, timesta
 - 選択時 `window.ProjectLoader.loadFromFolder(path, displayPath)` を呼ぶ
 
 ## プロジェクトローダ（project-loader.js）
-フォルダ内の `pXXX_page.svg` (XXX は数字) を XXX 数値順にページとして取り込む。
+選択フォルダ配下の `pages/pXXX_page.svg` (XXX は数字) を XXX 数値順にページとして取り込む。
 ```javascript
 await window.ProjectLoader.loadFromFolder(homeRelativePath, displayPath)
 ```
-- `/api/files?pattern=^p\d+_page\.svg$` で列挙、ファイル名から `parseInt` で数値ソート
+- `<選択フォルダ>/pages/` を `/api/files?pattern=^p\d+_page\.svg$` で列挙、ファイル名から `parseInt` で数値ソート
+- `pages/` サブフォルダが無い場合は専用エラー (`projectLoaderNoPagesDir`)
 - `/api/file` で各 SVG を取得 → `fabric.loadSVGFromString` → `addInitialImageToCanvas`
 - 各ページごとに `setCanvasGUID(generateGUID())` + `canvas.clear()` + `btmSaveProjectFile(guid,false)`
 - 既存 `btmProjectsMap` は全クリアして新規プロジェクトとして再構築

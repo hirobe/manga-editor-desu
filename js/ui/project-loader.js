@@ -1,8 +1,9 @@
-// 選択フォルダ内の pXXX_page.svg を XXX 数値順にページとして取り込むローダ。
+// 選択プロジェクトフォルダ配下の pages/pXXX_page.svg を XXX 数値順にページとして取り込むローダ。
 // 既存ページはすべて破棄し新規プロジェクトとして再構築する。
 
 const PROJECT_LOADER_FILES_API='/api/files';
 const PROJECT_LOADER_FILE_API='/api/file';
+const PROJECT_LOADER_PAGES_SUBDIR='pages';
 const PROJECT_LOADER_PATTERN='^p\\d+_page\\.svg$';
 
 window.ProjectLoader={
@@ -10,10 +11,15 @@ loadFromFolder:loadProjectPagesFromFolder
 };
 
 async function loadProjectPagesFromFolder(folderPath,folderDisplayPath){
-const url=`${PROJECT_LOADER_FILES_API}?path=${encodeURIComponent(folderPath)}&pattern=${encodeURIComponent(PROJECT_LOADER_PATTERN)}`;
+const pagesPath=folderPath?`${folderPath}/${PROJECT_LOADER_PAGES_SUBDIR}`:PROJECT_LOADER_PAGES_SUBDIR;
+const url=`${PROJECT_LOADER_FILES_API}?path=${encodeURIComponent(pagesPath)}&pattern=${encodeURIComponent(PROJECT_LOADER_PATTERN)}`;
 let listJson;
 try{
 const res=await fetch(url);
+if(res.status===404){
+createToastError(plText('projectLoaderError'),[plText('projectLoaderNoPagesDir')]);
+return;
+}
 if(!res.ok) throw new Error('list http '+res.status);
 listJson=await res.json();
 }catch(err){
