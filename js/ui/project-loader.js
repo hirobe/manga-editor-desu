@@ -101,12 +101,50 @@ await btmSaveProjectFile(newGuid,false);
 }
 
 async function addLayerWithChildren(spec,pagesBasePath){
+// 吹き出しはグループにまとめず、本体(シェイプ)とテキストを別オブジェクトで配置する。
+if(spec&&spec.type==='group'&&spec.customType==='speechBubbleSVG'){
+await addSpeechBubbleSeparate(spec,pagesBasePath);
+return;
+}
 const obj=await enlivenLayer(spec,pagesBasePath);
 if(obj) canvas.add(obj);
 if(spec.type!=='group'&&Array.isArray(spec.children)){
 for(const childSpec of spec.children){
 await addLayerWithChildren(childSpec,pagesBasePath);
 }
+}
+}
+
+// 吹き出しグループを「本体シェイプ(speechBubbleSVG)」と「テキスト(通常のテキスト)」の
+// 2オブジェクトに分けて配置する。子のローカル座標はグループのleft/topを足して絶対化する。
+async function addSpeechBubbleSeparate(spec,pagesBasePath){
+const gx=numOr(spec.left,0);
+const gy=numOr(spec.top,0);
+const children=Array.isArray(spec.children)?spec.children:[];
+const shapeSpec=children.find(c=>c&&(c.type==='path'||c.type==='polygon'||c.type==='rect'));
+const textSpec=children.find(c=>c&&(c.type==='vertical-textbox'||c.type==='textbox'||c.type==='text'||c.type==='i-text'));
+
+let bubble=null;
+if(shapeSpec){
+bubble=await enlivenLayer({...shapeSpec,left:gx+numOr(shapeSpec.left,0),top:gy+numOr(shapeSpec.top,0)},pagesBasePath);
+}
+let text=null;
+if(textSpec){
+text=await enlivenLayer({...textSpec,left:gx+numOr(textSpec.left,0),top:gy+numOr(textSpec.top,0)},pagesBasePath);
+}
+
+if(bubble){
+bubble.customType='speechBubbleSVG';
+if(spec.guid) bubble.guid=spec.guid;
+if(spec.name) bubble.name=spec.name;
+if(spec.relatedPoly) bubble.relatedPoly=spec.relatedPoly;
+// reSetSpeechBubbleTextがobj.guidsを参照するため必ず配列を持たせる。
+bubble.guids=(text&&text.guid)?[text.guid]:[];
+canvas.add(bubble);
+}
+if(text){
+if(bubble&&bubble.guid) text.relatedPoly=bubble.guid;
+canvas.add(text);
 }
 }
 
@@ -240,12 +278,20 @@ return new fabric.Textbox(spec.text||'',opts);
 
 function createVerticalTextboxLayer(spec){
 if(typeof fabric.VerticalTextbox==='function'){
+// 縦書きはテキスト領域の左上ではなく、領域内に中央寄せで配置する(ネイティブ準拠)。
+// VerticalTextboxのwidthは列数から自動算出されるため設定しない。heightが
+// 縦列の折返し長になるので、領域の高さ(無ければ幅で近似)を渡す。
+const areaW=numOr(spec.width,0);
+const colLen=numOr(spec.height,areaW);
 const opts={
-left:numOr(spec.left,0),
+left:numOr(spec.left,0)+areaW/2,
 top:numOr(spec.top,0),
-fontSize:numOr(spec.fontSize,16)
+fontSize:numOr(spec.fontSize,16),
+originX:'center',
+originY:'top',
+textAlign:'center'
 };
-if(spec.width!==undefined) opts.width=spec.width;
+if(colLen) opts.height=colLen;
 if(spec.fontFamily) opts.fontFamily=spec.fontFamily;
 if(spec.fill) opts.fill=spec.fill;
 return new fabric.VerticalTextbox(spec.text||'',opts);

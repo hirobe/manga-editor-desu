@@ -158,11 +158,15 @@
 ```
 
 - 縦書きは `type="vertical-textbox"`
+- `left`/`top`/`width`/`height` はテキスト領域(矩形)を表す。ローダは領域内に中央寄せ(`originX:center`)で配置する。縦書きの `height` は縦列の折返し長として使われるため、領域の高さを指定する(省略時は `width` で近似)
 - フォントは `js/core/font/` に登録済みのもの推奨。未登録だと別フォントにフォールバックされない (fallback禁止方針)
 
 #### 吹き出し (`customType="speechBubbleSVG"`)
 
-吹き出しはテキストと SVG パスの組合せ。グループ単位で定義:
+吹き出しはテキストと SVG パスの組合せ。JSON 上はグループ単位で定義するが、**ローダはグループにまとめず、本体(シェイプ)とテキストを別オブジェクトとして展開して配置する** (`addSpeechBubbleSeparate`)。
+- 本体: シェイプ(path/polygon/rect)を `customType="speechBubbleSVG"` のオブジェクトにし、グループの `guid`/`relatedPoly` を引き継ぐ。`guids` には配下テキストの guid を入れる
+- テキスト: 独立した通常のテキストオブジェクト。`relatedPoly` で本体を参照
+- 子のローカル座標はグループの `left`/`top` を足して絶対座標化する
 
 ```json
 {
