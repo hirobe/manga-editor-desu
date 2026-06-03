@@ -222,12 +222,16 @@ if(spec.scaleX!==undefined) img.scaleX=spec.scaleX;
 if(spec.scaleY!==undefined) img.scaleY=spec.scaleY;
 if(areaW&&areaH&&img.width&&img.height){
 // アスペクト比を保ったままコマを埋める(cover)。長辺基準で倍率を決め余白を
-// 出さず中央配置する。クリップはしない(はみ出しはそのまま表示)。
+// 出さず中央配置する。
 const scale=Math.max(areaW/img.width,areaH/img.height);
 img.scaleX=scale;
 img.scaleY=scale;
 img.left=ax+(areaW-img.width*scale)/2;
 img.top=ay+(areaH-img.height*scale)/2;
+// 画像データは切らず、表示時にコマ枠内だけ見えるようにする(ひな形パネルと同じ
+// display-clip)。画像相対(非absolutePositioned)なので画像と一体でスケール・移動し、
+// 再読込のリサイズでもズレない。画像はコマ中央配置なので画像中心基準で切り抜く。
+img.clipPath=new fabric.Rect({width:areaW/scale,height:areaH/scale,originX:'center',originY:'center',left:0,top:0,strokeWidth:0});
 }else if(areaW&&img.width){
 img.scaleX=img.scaleY=areaW/img.width;
 }else if(areaH&&img.height){

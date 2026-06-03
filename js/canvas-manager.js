@@ -62,7 +62,9 @@ top: obj.initial.top*scaleY,
 strokeWidth: obj.initial.strokeWidth*scaleX,
 });
 
-if (obj.clipPath) {
+// 画像相対(非absolutePositioned)のclipPathは親と一体でスケールするため対象外。
+// absolutePositionedでinitial未設定のものも(取り込み画像など)スケールしない。
+if (obj.clipPath&&obj.clipPath.absolutePositioned&&obj.clipPath.initial) {
 scaleX=newWidth/obj.clipPath.initial.canvasWidth;
 scaleY=newHeight/obj.clipPath.initial.canvasHeight;
 const clipPath=obj.clipPath;

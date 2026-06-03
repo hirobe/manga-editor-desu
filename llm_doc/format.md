@@ -113,8 +113,9 @@
 ```
 
 - `src`: `page.json` からの相対パス。`assets/...` を推奨。`data:` URL も許容
-- `width`/`height` はコマ(配置領域)のサイズ。ローダは**元画像のアスペクト比を保ったまま**、領域を埋めるよう拡縮する(cover相当: `scale=max(width/imgW,height/imgH)`)。余白は出さず領域中央に配置する。**クリップはしない**(はみ出しはそのまま表示)
-- 矩形コマはクリップ対象外(`js/fabric/fabric-management.js` の `updateClipPath` で `type==='rect'` は何もしない)
+- `width`/`height` はコマ(配置領域)のサイズ。ローダは**元画像のアスペクト比を保ったまま**、領域を埋めるよう拡縮する(cover相当: `scale=max(width/imgW,height/imgH)`)。余白は出さず領域中央に配置する
+- 画像データは切らず、**表示時にコマ枠内だけ見えるようにする**(ひな形パネルと同じ display-clip)。クリップは画像相対(非`absolutePositioned`)の矩形で、画像と一体でスケール・移動するため再読込時もズレない
+- 矩形コマでは `updateClipPath` 経由のクリップは行わない(`type==='rect'` は何もしない)。ローダが画像へ直接 clipPath を設定済みで上書き不要、かつ矩形コマの `guids` に含まれる吹き出しを誤ってクリップしないため
 
 #### パネル/コマ (矩形/多角形, `isPanel=true`)
 

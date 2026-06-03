@@ -232,7 +232,9 @@ updatePathClipPath(imageObj,fabricObj);
 return;
 }
 if (fabricObj.type==='rect') {
-// 矩形コマはクリップしない(取り込み画像ははみ出しをそのまま表示する)。
+// 矩形コマここでは何もしない。取り込み画像のdisplay-clipはローダが画像相対の
+// clipPathとして設定済みで上書き不要。また矩形コマのguidsには吹き出しも含まれる
+// ため、ここでクリップすると吹き出しまで切れてしまうのを防ぐ。
 return;
 }
 
