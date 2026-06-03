@@ -30,3 +30,4 @@
 | 19 | ログ | 各ファイルで`new SimpleLogger()`していないか。ロガーは`js/core/logger.js`に集約定義し、各ファイルではグローバル変数として参照する | 1 |
 | 20 | 非同期 | `_comfyUIExecProvider`等のグローバル変数に依存するURL/認証情報を、長時間のawait（WebSocket待機等）をまたいで使っていないか。非同期処理中に別タスクがグローバル変数を上書きし、別プロバイダのURLに接続してしまう。関数冒頭でサーバーアドレス・認証情報をローカル変数にキャプチャして使う | 2 |
 | 21 | fallback | グローバル変数が未設定のときデフォルト値（`'local'`等）にフォールバックしていないか。`_comfyUIExecProvider`がnullのときキーを`'local'`にする、`comfyObjectInfoListMap.get(key)\|\|comfyObjectInfoListMap.get('local')`のように別キーにフォールバックする等はすべて暗黙のfallback。awaitなしで呼ばれたasync関数ではグローバル変数が既にクリアされているため、呼び出し元で値を事前キャプチャして引数で渡す | 1 |
+| 22 | 保存 | オブジェクトの位置・サイズをシリアライズする際、`scaleX/scaleY`を加味しているか。fabricはリサイズ時に`width/height`ではなく`scaleX/scaleY`で拡縮するため、生の`width/height`だけ保存すると再読込で実寸が食い違い、コマ/クリップのレイアウトが崩れる。位置(left/top)と実寸(width*scaleX)の整合を確認する | 1 |
