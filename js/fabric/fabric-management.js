@@ -232,7 +232,7 @@ updatePathClipPath(imageObj,fabricObj);
 return;
 }
 if (fabricObj.type==='rect') {
-updateRectClipPath(imageObj,fabricObj);
+// 矩形コマはクリップしない(取り込み画像ははみ出しをそのまま表示する)。
 return;
 }
 
@@ -299,30 +299,6 @@ saveInitialState(clipPath);
 
 imageObj.clipPath=clipPath;
 }
-
-// 矩形コマ用のクリップ。コマの幾何領域(塗り矩形=SVGのclip rectと同じ)で切り抜く。
-// 画像相対(非absolutePositioned)にして画像と一体でスケール・移動させる
-// (absolutePositionedだとリサイズ時に画像と別倍率になりズレるため)。
-function updateRectClipPath(imageObj,rectObj) {
-const sw=rectObj.strokeWidth||0;
-const panelW=rectObj.width*rectObj.scaleX;
-const panelH=rectObj.height*rectObj.scaleY;
-const panelCx=rectObj.left+(sw*rectObj.scaleX)/2+panelW/2;
-const panelCy=rectObj.top+(sw*rectObj.scaleY)/2+panelH/2;
-const imgCx=imageObj.left+(imageObj.width*imageObj.scaleX)/2;
-const imgCy=imageObj.top+(imageObj.height*imageObj.scaleY)/2;
-const clipPath=new fabric.Rect({
-width:  panelW/imageObj.scaleX,
-height: panelH/imageObj.scaleY,
-left:   (panelCx-imgCx)/imageObj.scaleX,
-top:    (panelCy-imgCy)/imageObj.scaleY,
-originX: 'center',
-originY: 'center',
-strokeWidth: 0,
-});
-imageObj.clipPath=clipPath;
-}
-
 
 canvas.on("object:added",(e)=>{
 eventLogger.trace('17: object:added');

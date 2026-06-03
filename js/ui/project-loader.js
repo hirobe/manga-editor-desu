@@ -222,16 +222,12 @@ if(spec.scaleX!==undefined) img.scaleX=spec.scaleX;
 if(spec.scaleY!==undefined) img.scaleY=spec.scaleY;
 if(areaW&&areaH&&img.width&&img.height){
 // アスペクト比を保ったままコマを埋める(cover)。長辺基準で倍率を決め余白を
-// 出さず、はみ出しはコマ領域でクリップする(SVGのpreserveAspectRatio=slice相当)。
+// 出さず中央配置する。クリップはしない(はみ出しはそのまま表示)。
 const scale=Math.max(areaW/img.width,areaH/img.height);
 img.scaleX=scale;
 img.scaleY=scale;
 img.left=ax+(areaW-img.width*scale)/2;
 img.top=ay+(areaH-img.height*scale)/2;
-// クリップは画像相対(非absolutePositioned)にして画像と一体でスケール・移動させる。
-// absolutePositionedだと再読込時のリサイズで画像と別倍率になりズレるため。
-// 画像はコマ中央に配置済みなので、画像中心基準で領域サイズ(スケール前)を切り抜く。
-img.clipPath=new fabric.Rect({width:areaW/scale,height:areaH/scale,originX:'center',originY:'center',left:0,top:0,strokeWidth:0});
 }else if(areaW&&img.width){
 img.scaleX=img.scaleY=areaW/img.width;
 }else if(areaH&&img.height){
