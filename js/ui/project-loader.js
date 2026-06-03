@@ -213,6 +213,10 @@ return obj;
 }
 
 function applyMetaProps(obj,spec){
+if(spec.scaleX!==undefined) obj.scaleX=spec.scaleX;
+if(spec.scaleY!==undefined) obj.scaleY=spec.scaleY;
+if(spec.originX!==undefined) obj.originX=spec.originX;
+if(spec.originY!==undefined) obj.originY=spec.originY;
 if(spec.angle!==undefined) obj.angle=spec.angle;
 if(spec.opacity!==undefined) obj.opacity=spec.opacity;
 if(spec.visible!==undefined) obj.visible=spec.visible;
@@ -330,6 +334,21 @@ return new fabric.Textbox(spec.text||'',opts);
 
 function createVerticalTextboxLayer(spec){
 if(typeof fabric.VerticalTextbox==='function'){
+if(spec.preserveTransform){
+const opts={
+left:numOr(spec.left,0),
+top:numOr(spec.top,0),
+fontSize:numOr(spec.fontSize,16),
+originX:spec.originX||'center',
+originY:spec.originY||'top',
+textAlign:spec.textAlign||'center'
+};
+if(spec.width!==undefined) opts.width=spec.width;
+if(spec.height!==undefined) opts.height=spec.height;
+if(spec.fontFamily) opts.fontFamily=spec.fontFamily;
+if(spec.fill) opts.fill=spec.fill;
+return new fabric.VerticalTextbox(spec.text||'',opts);
+}
 // 縦書きはテキスト領域の左上ではなく、領域内に中央寄せで配置する(ネイティブ準拠)。
 // VerticalTextboxのwidthは列数から自動算出されるため設定しない。heightが
 // 縦列の折返し長になるので、領域の高さ(無ければ幅で近似)を渡す。
@@ -468,6 +487,10 @@ top:numOr(obj.top,0)
 copyProjectLoaderProp(spec,obj,'customType');
 copyProjectLoaderProp(spec,obj,'name');
 copyProjectLoaderProp(spec,obj,'angle');
+copyProjectLoaderProp(spec,obj,'scaleX');
+copyProjectLoaderProp(spec,obj,'scaleY');
+copyProjectLoaderProp(spec,obj,'originX');
+copyProjectLoaderProp(spec,obj,'originY');
 copyProjectLoaderProp(spec,obj,'opacity');
 copyProjectLoaderProp(spec,obj,'visible');
 copyProjectLoaderProp(spec,obj,'selectable');
@@ -535,6 +558,7 @@ if(type==='textbox'||type==='text'||type==='i-text'||type==='vertical-textbox'){
 spec.text=obj.text||'';
 spec.width=numOr(obj.width,0);
 spec.height=numOr(obj.height,0);
+if(type==='vertical-textbox') spec.preserveTransform=true;
 copyProjectLoaderProp(spec,obj,'fontSize');
 copyProjectLoaderProp(spec,obj,'fontFamily');
 copyProjectLoaderProp(spec,obj,'fill');
