@@ -769,7 +769,7 @@ const url=`/api/files?path=${encodeURIComponent(dirPath)}&pattern=${encodeURICom
 const res=await fetch(url);
 if(!res.ok) throw new Error('list png http '+res.status);
 const data=await res.json();
-return (data.entries||[]).filter(entry=>/\.png$/i.test(entry.name));
+return (data.entries||[]).filter(entry=>/\.png$/i.test(entry.name)&&entry.name.toLowerCase()!=='tile.png');
 }
 
 async function replaceProjectImage(imageObject,nextPath,currentPath){
