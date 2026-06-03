@@ -91,6 +91,7 @@ for(const layerSpec of layers){
 await addLayerWithChildren(layerSpec,pagesBasePath);
 }
 // 全オブジェクトの基準状態をページサイズ(scale=1)で揃えてから保存する。
+// 画像のclipPathもここでinitialが設定され、画像と同一canvasサイズで同期する。
 canvas.getObjects().forEach(obj=>saveInitialState(obj));
 }finally{
 window._projectLoaderBuilding=false;
@@ -213,14 +214,30 @@ if(!img){
 reject(new Error('image load failed: '+spec.src));
 return;
 }
-img.set({
-left:numOr(spec.left,0),
-top:numOr(spec.top,0)
-});
+const ax=numOr(spec.left,0);
+const ay=numOr(spec.top,0);
+const areaW=numOr(spec.width,0);
+const areaH=numOr(spec.height,0);
+img.set({left:ax,top:ay});
 if(spec.scaleX!==undefined) img.scaleX=spec.scaleX;
 if(spec.scaleY!==undefined) img.scaleY=spec.scaleY;
-if(spec.width&&img.width) img.scaleX=spec.width/img.width;
-if(spec.height&&img.height) img.scaleY=spec.height/img.height;
+if(areaW&&areaH&&img.width&&img.height){
+// アスペクト比を保ったままコマを埋める(cover)。長辺基準で倍率を決め余白を
+// 出さず中央配置する。
+const scale=Math.max(areaW/img.width,areaH/img.height);
+img.scaleX=scale;
+img.scaleY=scale;
+img.left=ax+(areaW-img.width*scale)/2;
+img.top=ay+(areaH-img.height*scale)/2;
+// コマ枠内だけ表示する(画像オブジェクト自体は無傷=ひな形パネルと同じ)。
+// コマ領域(幾何矩形)を窓にする絶対配置clipPath。再読込時はupdateRectClipPathが
+// 再生成する。initialはaddJsonAsPageのsaveInitialStateで画像と同期させる。
+img.clipPath=new fabric.Rect({left:ax,top:ay,width:areaW,height:areaH,strokeWidth:0,absolutePositioned:true});
+}else if(areaW&&img.width){
+img.scaleX=img.scaleY=areaW/img.width;
+}else if(areaH&&img.height){
+img.scaleX=img.scaleY=areaH/img.height;
+}
 resolve(img);
 },{crossOrigin:'anonymous'});
 });
