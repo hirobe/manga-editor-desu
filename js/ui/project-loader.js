@@ -83,6 +83,10 @@ if(pageJson.pageSize&&pageJson.pageSize.width&&pageJson.pageSize.height){
 resizeCanvasByNum(pageJson.pageSize.width,pageJson.pageSize.height);
 }
 
+// canvas.clear()で背景色がクリアされるため、ひな形パネルと同様にページ背景を
+// bg-color(既定#ffffff=白)に設定する。既定の灰色のままにしない。
+canvas.backgroundColor=$("bg-color").value;
+
 // ビルド中の画像ロードawait中にリサイズが割り込んでスケールが累積するのを防ぐ。
 window._projectLoaderBuilding=true;
 try{
