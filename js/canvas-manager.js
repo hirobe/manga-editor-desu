@@ -42,6 +42,12 @@ function resizeCanvas(newWidth,newHeight) {
 if(!newWidth||!newHeight||isNaN(newWidth)||isNaN(newHeight)){
 return;
 }
+// プロジェクト取り込み中はオブジェクトごとのスケール再計算を抑止する。
+// ビルド中の画像ロードawaitの隙にリサイズが割り込むと、追加済みオブジェクトが
+// 繰り返しスケールされ歪んだ状態が保存に焼き付くため(コマ位置・サイズのズレ)。
+if(window._projectLoaderBuilding){
+return;
+}
 canvas.setDimensions({width: newWidth,height: newHeight});
 canvas.getObjects().forEach((obj)=>{
 
@@ -56,7 +62,9 @@ top: obj.initial.top*scaleY,
 strokeWidth: obj.initial.strokeWidth*scaleX,
 });
 
-if (obj.clipPath) {
+// 画像相対(非absolutePositioned)のclipPathは親と一体でスケールするため対象外。
+// absolutePositionedでinitial未設定のものも(取り込み画像など)スケールしない。
+if (obj.clipPath&&obj.clipPath.absolutePositioned&&obj.clipPath.initial) {
 scaleX=newWidth/obj.clipPath.initial.canvasWidth;
 scaleY=newHeight/obj.clipPath.initial.canvasHeight;
 const clipPath=obj.clipPath;
