@@ -19,6 +19,7 @@ var menuIconMap={
 "upscale":"zoom_in",
 "inpaint":"brush",
 "angleGenerate":"view_in_ar",
+"replaceImage":"swap_horiz",
 "flipHorizontal":"flip",
 "flipVertical":"flip",
 "cropImage":"crop",
@@ -169,6 +170,7 @@ var rembg=createObjectMenuButton('rembg');
 var upscale=createObjectMenuButton('upscale');
 var inpaint=createObjectMenuButton('inpaint');
 var angleGenerate=createObjectMenuButton('angleGenerate');
+var replaceImage=createObjectMenuButton('replaceImage');
 var clearAllClipPaths=createObjectMenuButton('clearAllClipPaths');
 
 var clearTopClipPath=createObjectMenuButton('clearTopClipPath');
@@ -230,7 +232,7 @@ menuItems.push(deleteMenu);
 if(clickType!=='left'){
 menuItems.push(selectClear);
 menuItems.push(createObjectMenuGroupHeader('menuGroupOperation'));
-menuItems.push(visible,movement,duplicate);
+menuItems.push(visible,movement,duplicate,replaceImage);
 var aiItems=[];
 if(hasRole(AI_ROLES.Image2Image))aiItems.push(generate);
 if(hasRole(AI_ROLES.RemoveBG))aiItems.push(rembg);
@@ -538,6 +540,11 @@ break;
 case 'angleGenerate':
 openAngleEditor(activeObject);
 break;
+case 'replaceImage':
+if(isImage(activeObject)){
+openProjectImageReplacePicker(activeObject);
+}
+break;
 case 'generate':
 if(isPanel(activeObject)){
 var spinner=createSpinner(getGUID(activeObject),'T2I');
@@ -679,3 +686,153 @@ closeMenu();
 }
 
 createObjectMenu();
+
+async function openProjectImageReplacePicker(imageObject){
+const currentPath=getProjectImagePath(imageObject);
+if(!currentPath){
+createToastError(getText('replaceImage'),[getText('projectImageReplaceNoPath')]);
+return;
+}
+const dirPath=currentPath.split('/').slice(0,-1).join('/');
+if(!dirPath){
+createToastError(getText('replaceImage'),[getText('projectImageReplaceNoPath')]);
+return;
+}
+
+const overlay=document.createElement('div');
+overlay.className='project-image-replace-overlay';
+overlay.innerHTML=`
+<div class="project-image-replace-modal" role="dialog" aria-modal="true">
+<div class="project-image-replace-header">
+<h3>${getText('projectImageReplaceTitle')}</h3>
+<button type="button" class="project-image-replace-close" aria-label="Close">&times;</button>
+</div>
+<div class="project-image-replace-list">
+<div class="project-image-replace-status">${getText('projectImageReplaceLoading')}</div>
+</div>
+</div>
+`;
+document.body.appendChild(overlay);
+
+const close=()=>{
+overlay.remove();
+document.removeEventListener('keydown',onKey);
+};
+const onKey=(e)=>{if(e.key==='Escape') close();};
+document.addEventListener('keydown',onKey);
+overlay.addEventListener('click',(e)=>{
+if(e.target===overlay) close();
+});
+overlay.querySelector('.project-image-replace-close').addEventListener('click',close);
+
+const list=overlay.querySelector('.project-image-replace-list');
+try{
+const entries=await fetchProjectPngList(dirPath);
+list.innerHTML='';
+if(entries.length===0){
+list.innerHTML=`<div class="project-image-replace-status">${getText('projectImageReplaceEmpty')}</div>`;
+return;
+}
+entries.forEach(entry=>{
+const item=document.createElement('button');
+item.type='button';
+item.className='project-image-replace-item';
+if(entry.path===currentPath){
+item.classList.add('current');
+}
+item.innerHTML=`<img alt=""><span></span>`;
+item.querySelector('img').src=getProjectFileUrl(entry.path);
+item.querySelector('span').textContent=entry.name;
+item.addEventListener('click',async ()=>{
+if(entry.path===currentPath){
+close();
+return;
+}
+try{
+await replaceProjectImage(imageObject,entry.path,currentPath);
+close();
+}catch(err){
+uiLogger.error('replace image failed',err);
+createToastError(getText('replaceImage'),[err.message||'']);
+}
+});
+list.appendChild(item);
+});
+}catch(err){
+uiLogger.error('list replacement images failed',err);
+list.innerHTML=`<div class="project-image-replace-status error">${getText('projectImageReplaceError')}</div>`;
+}
+}
+
+async function fetchProjectPngList(dirPath){
+const url=`/api/files?path=${encodeURIComponent(dirPath)}&pattern=${encodeURIComponent('(?i)\\.png$')}`;
+const res=await fetch(url);
+if(!res.ok) throw new Error('list png http '+res.status);
+const data=await res.json();
+return (data.entries||[]).filter(entry=>/\.png$/i.test(entry.name)&&entry.name.toLowerCase()!=='tile.png');
+}
+
+async function replaceProjectImage(imageObject,nextPath,currentPath){
+const oldDisplayWidth=imageObject.width*numOrMenu(imageObject.scaleX,1);
+const oldDisplayHeight=imageObject.height*numOrMenu(imageObject.scaleY,1);
+const nextUrl=getProjectFileUrl(nextPath);
+const nextImage=await loadFabricImageForReplace(nextUrl);
+imageObject.setElement(nextImage.getElement());
+imageObject.width=nextImage.width;
+imageObject.height=nextImage.height;
+if(imageObject.width){
+imageObject.scaleX=oldDisplayWidth/imageObject.width;
+}
+if(imageObject.height){
+imageObject.scaleY=oldDisplayHeight/imageObject.height;
+}
+imageObject.projectLoaderPath=nextPath;
+imageObject.projectLoaderSrc=relativeProjectImagePath(imageObject.projectLoaderBasePath,currentPath,nextPath);
+imageObject.dirty=true;
+canvas.setActiveObject(imageObject);
+canvas.requestRenderAll();
+updateLayerPanel();
+saveStateByManual();
+await btmSaveProjectFile(null,false);
+}
+
+function loadFabricImageForReplace(src){
+return new Promise((resolve,reject)=>{
+fabric.Image.fromURL(src,(img)=>{
+if(!img){
+reject(new Error('image load failed'));
+return;
+}
+resolve(img);
+},{crossOrigin:'anonymous'});
+});
+}
+
+function getProjectImagePath(imageObject){
+if(imageObject.projectLoaderPath) return imageObject.projectLoaderPath;
+const src=imageObject.projectLoaderSrc;
+if(src&&/^[^:]+\/.*\.png$/i.test(src)) return src;
+return null;
+}
+
+function getProjectFileUrl(path){
+if(window.ProjectLoader&&typeof window.ProjectLoader.fileUrl==='function'){
+return window.ProjectLoader.fileUrl(path);
+}
+return `/api/file?path=${encodeURIComponent(path)}`;
+}
+
+function relativeProjectImagePath(basePath,currentPath,nextPath){
+if(basePath&&nextPath.startsWith(basePath+'/')){
+return nextPath.substring(basePath.length+1);
+}
+const currentDir=currentPath.split('/').slice(0,-1).join('/');
+if(currentDir&&nextPath.startsWith(currentDir+'/')){
+return nextPath.substring(currentDir.length+1);
+}
+return nextPath;
+}
+
+function numOrMenu(v,fallback){
+return (v===undefined||v===null||isNaN(v))?fallback:v;
+}
