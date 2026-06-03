@@ -91,6 +91,7 @@ for(const layerSpec of layers){
 await addLayerWithChildren(layerSpec,pagesBasePath);
 }
 // 全オブジェクトの基準状態をページサイズ(scale=1)で揃えてから保存する。
+// 画像のclipPathもここでinitialが設定され、画像と同一canvasサイズで同期する。
 canvas.getObjects().forEach(obj=>saveInitialState(obj));
 }finally{
 window._projectLoaderBuilding=false;
@@ -228,10 +229,10 @@ img.scaleX=scale;
 img.scaleY=scale;
 img.left=ax+(areaW-img.width*scale)/2;
 img.top=ay+(areaH-img.height*scale)/2;
-// 画像データは切らず、表示時にコマ枠内だけ見えるようにする(ひな形パネルと同じ
-// display-clip)。画像相対(非absolutePositioned)なので画像と一体でスケール・移動し、
-// 再読込のリサイズでもズレない。画像はコマ中央配置なので画像中心基準で切り抜く。
-img.clipPath=new fabric.Rect({width:areaW/scale,height:areaH/scale,originX:'center',originY:'center',left:0,top:0,strokeWidth:0});
+// コマ枠内だけ表示する(画像オブジェクト自体は無傷=ひな形パネルと同じ)。
+// コマ領域(幾何矩形)を窓にする絶対配置clipPath。再読込時はupdateRectClipPathが
+// 再生成する。initialはaddJsonAsPageのsaveInitialStateで画像と同期させる。
+img.clipPath=new fabric.Rect({left:ax,top:ay,width:areaW,height:areaH,strokeWidth:0,absolutePositioned:true});
 }else if(areaW&&img.width){
 img.scaleX=img.scaleY=areaW/img.width;
 }else if(areaH&&img.height){

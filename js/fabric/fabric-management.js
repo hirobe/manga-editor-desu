@@ -232,9 +232,7 @@ updatePathClipPath(imageObj,fabricObj);
 return;
 }
 if (fabricObj.type==='rect') {
-// 矩形コマここでは何もしない。取り込み画像のdisplay-clipはローダが画像相対の
-// clipPathとして設定済みで上書き不要。また矩形コマのguidsには吹き出しも含まれる
-// ため、ここでクリップすると吹き出しまで切れてしまうのを防ぐ。
+updateRectClipPath(imageObj,fabricObj);
 return;
 }
 
@@ -300,6 +298,27 @@ saveInitialState(clipPath);
 }
 
 imageObj.clipPath=clipPath;
+}
+
+// 矩形コマ用のクリップ。コマの幾何領域(塗り矩形=SVGのclip rectと同じ)を窓にして
+// 画像の見える範囲を絶対座標で制限する(画像オブジェクト自体は無傷=ひな形と同じ)。
+// 吹き出し等もコマのguidsに含まれるため、画像のみを対象にする。
+// clipPathと画像のinitialを同一canvasサイズで同期させ、リサイズ時のズレを防ぐ。
+function updateRectClipPath(imageObj,rectObj) {
+if (imageObj.type!=='image') {
+return;
+}
+const sw=rectObj.strokeWidth||0;
+const clipPath=new fabric.Rect({
+left:   rectObj.left+(sw*rectObj.scaleX)/2,
+top:    rectObj.top+(sw*rectObj.scaleY)/2,
+width:  rectObj.width*rectObj.scaleX,
+height: rectObj.height*rectObj.scaleY,
+strokeWidth: 0,
+absolutePositioned: true,
+});
+imageObj.clipPath=clipPath;
+saveInitialState(imageObj);
 }
 
 canvas.on("object:added",(e)=>{
