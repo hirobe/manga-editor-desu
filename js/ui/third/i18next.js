@@ -637,35 +637,83 @@ const resources = {
 "20260216160000_001":{
 "ja":{
 "copyAndPast":"複製",
-"menuClipping":"クリッピング..."
+"menuClipping":"クリッピング...",
+"replaceImage":"入替え",
+"projectImageReplaceTitle":"画像を入替え",
+"projectImageReplaceLoading":"画像一覧を読み込み中...",
+"projectImageReplaceEmpty":"同じフォルダにPNGがありません",
+"projectImageReplaceError":"画像一覧の読み込みに失敗しました",
+"projectImageReplaceNoPath":"この画像はプロジェクト内のPNGファイルではありません"
 },
 "en":{
 "copyAndPast":"Duplicate",
-"menuClipping":"Clipping..."
+"menuClipping":"Clipping...",
+"replaceImage":"Replace",
+"projectImageReplaceTitle":"Replace image",
+"projectImageReplaceLoading":"Loading images...",
+"projectImageReplaceEmpty":"No PNG files in the same folder",
+"projectImageReplaceError":"Failed to load image list",
+"projectImageReplaceNoPath":"This image is not a project PNG file"
 },
 "ko":{
 "copyAndPast":"복제",
-"menuClipping":"클리핑..."
+"menuClipping":"클리핑...",
+"replaceImage":"Replace",
+"projectImageReplaceTitle":"Replace image",
+"projectImageReplaceLoading":"Loading images...",
+"projectImageReplaceEmpty":"No PNG files in the same folder",
+"projectImageReplaceError":"Failed to load image list",
+"projectImageReplaceNoPath":"This image is not a project PNG file"
 },
 "fr":{
 "copyAndPast":"Dupliquer",
-"menuClipping":"Découpage..."
+"menuClipping":"Découpage...",
+"replaceImage":"Replace",
+"projectImageReplaceTitle":"Replace image",
+"projectImageReplaceLoading":"Loading images...",
+"projectImageReplaceEmpty":"No PNG files in the same folder",
+"projectImageReplaceError":"Failed to load image list",
+"projectImageReplaceNoPath":"This image is not a project PNG file"
 },
 "zh":{
 "copyAndPast":"复制",
-"menuClipping":"裁剪..."
+"menuClipping":"裁剪...",
+"replaceImage":"Replace",
+"projectImageReplaceTitle":"Replace image",
+"projectImageReplaceLoading":"Loading images...",
+"projectImageReplaceEmpty":"No PNG files in the same folder",
+"projectImageReplaceError":"Failed to load image list",
+"projectImageReplaceNoPath":"This image is not a project PNG file"
 },
 "ru":{
 "copyAndPast":"Дублировать",
-"menuClipping":"Обрезка..."
+"menuClipping":"Обрезка...",
+"replaceImage":"Replace",
+"projectImageReplaceTitle":"Replace image",
+"projectImageReplaceLoading":"Loading images...",
+"projectImageReplaceEmpty":"No PNG files in the same folder",
+"projectImageReplaceError":"Failed to load image list",
+"projectImageReplaceNoPath":"This image is not a project PNG file"
 },
 "es":{
 "copyAndPast":"Duplicar",
-"menuClipping":"Recorte..."
+"menuClipping":"Recorte...",
+"replaceImage":"Replace",
+"projectImageReplaceTitle":"Replace image",
+"projectImageReplaceLoading":"Loading images...",
+"projectImageReplaceEmpty":"No PNG files in the same folder",
+"projectImageReplaceError":"Failed to load image list",
+"projectImageReplaceNoPath":"This image is not a project PNG file"
 },
 "de":{
 "copyAndPast":"Duplizieren",
-"menuClipping":"Beschnitt..."
+"menuClipping":"Beschnitt...",
+"replaceImage":"Replace",
+"projectImageReplaceTitle":"Replace image",
+"projectImageReplaceLoading":"Loading images...",
+"projectImageReplaceEmpty":"No PNG files in the same folder",
+"projectImageReplaceError":"Failed to load image list",
+"projectImageReplaceNoPath":"This image is not a project PNG file"
 }
 },
 "20260216150000_001":{

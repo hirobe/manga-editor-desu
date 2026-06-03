@@ -11,7 +11,8 @@ let projectLoaderRestoring=false;
 
 window.ProjectLoader={
 loadFromFolder:loadProjectPagesFromFolder,
-syncCurrentPageEdit:syncCurrentPageEdit
+syncCurrentPageEdit:syncCurrentPageEdit,
+fileUrl:fileUrlForProjectLoaderPath
 };
 
 async function loadProjectPagesFromFolder(folderPath,folderDisplayPath){
@@ -243,6 +244,8 @@ const areaW=numOr(spec.width,0);
 const areaH=numOr(spec.height,0);
 img.set({left:ax,top:ay});
 img.projectLoaderSrc=spec.src;
+img.projectLoaderPath=resolveProjectLoaderAssetPath(spec.src,pagesBasePath);
+img.projectLoaderBasePath=pagesBasePath;
 if(spec.scaleX!==undefined) img.scaleX=spec.scaleX;
 if(spec.scaleY!==undefined) img.scaleY=spec.scaleY;
 if(spec.preserveTransform){
@@ -374,13 +377,25 @@ return group;
 }
 
 function resolveSrc(src,pagesBasePath){
+const fullPath=resolveProjectLoaderAssetPath(src,pagesBasePath);
+if(!fullPath) return null;
+if(fullPath===src&&(src.startsWith('data:')||src.startsWith('http://')||src.startsWith('https://'))){
+return src;
+}
+return fileUrlForProjectLoaderPath(fullPath);
+}
+
+function resolveProjectLoaderAssetPath(src,pagesBasePath){
 if(!src) return null;
 if(src.startsWith('data:')||src.startsWith('http://')||src.startsWith('https://')){
 return src;
 }
 const clean=src.replace(/^\.\//,'');
-const fullPath=pagesBasePath?`${pagesBasePath}/${clean}`:clean;
-return `${PROJECT_LOADER_FILE_API}?path=${encodeURIComponent(fullPath)}`;
+return pagesBasePath?`${pagesBasePath}/${clean}`:clean;
+}
+
+function fileUrlForProjectLoaderPath(path){
+return `${PROJECT_LOADER_FILE_API}?path=${encodeURIComponent(path)}`;
 }
 
 function numOr(v,fallback){
