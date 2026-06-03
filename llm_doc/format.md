@@ -352,6 +352,7 @@ my-project/
 - **フォント**: 登録済みフォント名でないと描画が破綻する場合あり。事前にフォント登録 (`js/db/user-font-repository.js`) を済ませる
 - **clipPath の動的生成**: パネル子画像で `clipPath` を省略するとローダが `relatedPoly` から生成するが、複雑形状では誤差が出る可能性
 - **fabric カスタムプロパティ**: `commonProperties` (`js/core/settings.js`) に未登録のプロパティはシリアライズ往復で失われる。新規プロパティは仕様改訂で追加
+- **編集保存 (`pXXX_page_edit.json`) の clipPath スケール**: 編集内容を書き戻す `serializeLayerForProjectLoader` (`js/ui/project-loader.js`) は、表示中 canvas (ウィンドウフィット済み) の状態をそのまま保存する。clipPath は `resizeCanvas` で `width/height` ではなく `scaleX/scaleY` により拡縮されるため、保存時は `scaleX/scaleY` を実寸へ焼き込む (`width*scaleX`)。生の `width/height` だけ保存すると、再読込で `scaleX=1` の Rect を生成しクリップ窓が画像スケールと食い違い、画像がコマ枠からはみ出してレイアウトが崩れる
 
 ## 実装概要
 

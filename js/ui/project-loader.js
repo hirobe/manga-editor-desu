@@ -483,11 +483,17 @@ spec.scaleX=numOr(obj.scaleX,1);
 spec.scaleY=numOr(obj.scaleY,1);
 spec.preserveTransform=true;
 if(obj.clipPath){
+// clipPathはリサイズ時にwidth/heightではなくscaleX/scaleYで拡縮される
+// (resizeCanvas)。生のwidth/heightだけ保存すると、再読込でscaleX=1のRectを
+// 作るため窓サイズが画像スケールと食い違い、画像がコマ枠からはみ出す。
+// scaleX/scaleYを実寸へ焼き込んでスケール非依存にする。left/topは絶対座標で
+// スケール済みのためそのまま使う。
+const cp=obj.clipPath;
 spec.clipPath={
-left:numOr(obj.clipPath.left,0),
-top:numOr(obj.clipPath.top,0),
-width:numOr(obj.clipPath.width,0),
-height:numOr(obj.clipPath.height,0)
+left:numOr(cp.left,0),
+top:numOr(cp.top,0),
+width:numOr(cp.width,0)*numOr(cp.scaleX,1),
+height:numOr(cp.height,0)*numOr(cp.scaleY,1)
 };
 }
 return spec;
