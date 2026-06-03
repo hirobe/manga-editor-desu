@@ -5,10 +5,13 @@
 const PROJECT_LOADER_FILES_API='/api/files';
 const PROJECT_LOADER_FILE_API='/api/file';
 const PROJECT_LOADER_PAGES_SUBDIR='pages';
-const PROJECT_LOADER_PATTERN='^p\\d+_page\\.json$';
+const PROJECT_LOADER_PATTERN='^p\\d+_page(?:_edit)?\\.json$';
+const projectLoaderPageFiles=new Map();
+let projectLoaderRestoring=false;
 
 window.ProjectLoader={
-loadFromFolder:loadProjectPagesFromFolder
+loadFromFolder:loadProjectPagesFromFolder,
+syncCurrentPageEdit:syncCurrentPageEdit
 };
 
 async function loadProjectPagesFromFolder(folderPath,folderDisplayPath){
@@ -30,12 +33,21 @@ createToastError(plText('projectLoaderError'),[err.message||'']);
 return;
 }
 
-const sorted=(listJson.entries||[])
+const fileByPage=(listJson.entries||[])
 .map(entry=>{
-const m=entry.name.match(/^p(\d+)_page\.json$/);
-return m?{...entry,num:parseInt(m[1],10)}:null;
+const m=entry.name.match(/^p(\d+)_page(_edit)?\.json$/);
+return m?{...entry,num:parseInt(m[1],10),isEdit:!!m[2]}:null;
 })
 .filter(Boolean)
+.reduce((map,entry)=>{
+const current=map.get(entry.num);
+if(!current||entry.isEdit){
+map.set(entry.num,entry);
+}
+return map;
+},new Map());
+
+const sorted=Array.from(fileByPage.values())
 .sort((a,b)=>a.num-b.num);
 
 if(sorted.length===0){
@@ -44,6 +56,7 @@ return;
 }
 
 resetProjectBtm();
+projectLoaderPageFiles.clear();
 
 let loaded=0;
 for(const file of sorted){
@@ -51,7 +64,7 @@ try{
 const res=await fetch(`${PROJECT_LOADER_FILE_API}?path=${encodeURIComponent(file.path)}`);
 if(!res.ok) throw new Error('file http '+res.status);
 const pageJson=await res.json();
-await addJsonAsPage(pageJson,pagesPath);
+await addJsonAsPage(pageJson,pagesPath,file);
 loaded++;
 }catch(err){
 folderPickerLogger.error('page load failed',err,file);
@@ -71,7 +84,7 @@ const container=$("btm-image-container");
 if(container) container.innerHTML='';
 }
 
-async function addJsonAsPage(pageJson,pagesBasePath){
+async function addJsonAsPage(pageJson,pagesBasePath,file){
 const newGuid=pageJson.canvasGuid||generateGUID();
 setCanvasGUID(newGuid);
 canvas.clear();
@@ -102,7 +115,13 @@ window._projectLoaderBuilding=false;
 }
 
 canvas.renderAll();
+registerProjectLoaderPageFile(newGuid,file);
+projectLoaderRestoring=true;
+try{
 await btmSaveProjectFile(newGuid,false);
+}finally{
+projectLoaderRestoring=false;
+}
 }
 
 async function addLayerWithChildren(spec,pagesBasePath){
@@ -223,9 +242,21 @@ const ay=numOr(spec.top,0);
 const areaW=numOr(spec.width,0);
 const areaH=numOr(spec.height,0);
 img.set({left:ax,top:ay});
+img.projectLoaderSrc=spec.src;
 if(spec.scaleX!==undefined) img.scaleX=spec.scaleX;
 if(spec.scaleY!==undefined) img.scaleY=spec.scaleY;
-if(areaW&&areaH&&img.width&&img.height){
+if(spec.preserveTransform){
+if(spec.clipPath&&spec.clipPath.width&&spec.clipPath.height){
+img.clipPath=new fabric.Rect({
+left:numOr(spec.clipPath.left,0),
+top:numOr(spec.clipPath.top,0),
+width:numOr(spec.clipPath.width,0),
+height:numOr(spec.clipPath.height,0),
+strokeWidth:0,
+absolutePositioned:true
+});
+}
+}else if(areaW&&areaH&&img.width&&img.height){
 // アスペクト比を保ったままコマを埋める(cover)。長辺基準で倍率を決め余白を
 // 出さず中央配置する。
 const scale=Math.max(areaW/img.width,areaH/img.height);
@@ -379,4 +410,161 @@ if(typeof i18next!=='undefined'&&i18next.isInitialized){
 return i18next.t(key);
 }
 return key;
+}
+
+function registerProjectLoaderPageFile(guid,file){
+if(!guid||!file) return;
+const sourcePath=file.path;
+const editPath=sourcePath.replace(/_page(?:_edit)?\.json$/,'_page_edit.json');
+const originalPath=sourcePath.replace(/_page_edit\.json$/,'_page.json');
+projectLoaderPageFiles.set(guid,{
+sourcePath:sourcePath,
+editPath:editPath,
+copyFrom:file.isEdit?null:originalPath
+});
+}
+
+async function syncCurrentPageEdit(guid){
+if(projectLoaderRestoring) return;
+guid=guid||getCanvasGUID();
+const pageFile=projectLoaderPageFiles.get(guid);
+if(!pageFile) return;
+const pageJson=serializeCurrentPageForProjectLoader(guid);
+const res=await fetch(PROJECT_LOADER_FILE_API,{
+method:'PUT',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({
+path:pageFile.editPath,
+copyFrom:pageFile.copyFrom,
+content:JSON.stringify(pageJson,null,2)+"\n"
+})
+});
+if(!res.ok) throw new Error('page edit save http '+res.status);
+pageFile.copyFrom=null;
+pageFile.sourcePath=pageFile.editPath;
+}
+
+function serializeCurrentPageForProjectLoader(guid){
+return {
+version:'1.0',
+pageSize:{
+width:canvas.getWidth(),
+height:canvas.getHeight()
+},
+canvasGuid:guid||getCanvasGUID(),
+layers:canvas.getObjects().map(serializeLayerForProjectLoader).filter(Boolean)
+};
+}
+
+function serializeLayerForProjectLoader(obj){
+if(!obj) return null;
+const type=normalizeProjectLoaderType(obj);
+const spec={
+guid:obj.guid||generateGUID(),
+type:type,
+left:numOr(obj.left,0),
+top:numOr(obj.top,0)
+};
+copyProjectLoaderProp(spec,obj,'customType');
+copyProjectLoaderProp(spec,obj,'name');
+copyProjectLoaderProp(spec,obj,'angle');
+copyProjectLoaderProp(spec,obj,'opacity');
+copyProjectLoaderProp(spec,obj,'visible');
+copyProjectLoaderProp(spec,obj,'selectable');
+copyProjectLoaderProp(spec,obj,'relatedPoly');
+if(Array.isArray(obj.guids)) spec.guids=obj.guids.slice();
+if(obj.isPanel) spec.isPanel=true;
+
+if(type==='image'){
+spec.src=obj.projectLoaderSrc||extractProjectLoaderImageSrc(obj);
+spec.width=numOr(obj.width,0);
+spec.height=numOr(obj.height,0);
+spec.scaleX=numOr(obj.scaleX,1);
+spec.scaleY=numOr(obj.scaleY,1);
+spec.preserveTransform=true;
+if(obj.clipPath){
+spec.clipPath={
+left:numOr(obj.clipPath.left,0),
+top:numOr(obj.clipPath.top,0),
+width:numOr(obj.clipPath.width,0),
+height:numOr(obj.clipPath.height,0)
+};
+}
+return spec;
+}
+
+if(type==='rect'){
+spec.width=numOr(obj.width,0);
+spec.height=numOr(obj.height,0);
+copyProjectLoaderProp(spec,obj,'fill');
+copyProjectLoaderProp(spec,obj,'stroke');
+copyProjectLoaderProp(spec,obj,'strokeWidth');
+restoreProjectLoaderStrokeShift(spec);
+return spec;
+}
+
+if(type==='polygon'){
+spec.points=Array.isArray(obj.points)?obj.points.map(p=>({x:p.x,y:p.y})):[];
+spec.width=numOr(obj.width,0);
+spec.height=numOr(obj.height,0);
+copyProjectLoaderProp(spec,obj,'fill');
+copyProjectLoaderProp(spec,obj,'stroke');
+copyProjectLoaderProp(spec,obj,'strokeWidth');
+restoreProjectLoaderStrokeShift(spec);
+return spec;
+}
+
+if(type==='path'){
+spec.d=Array.isArray(obj.path)?obj.path.map(cmd=>cmd.join(' ')).join(' '):(obj.d||'');
+spec.width=numOr(obj.width,0);
+spec.height=numOr(obj.height,0);
+copyProjectLoaderProp(spec,obj,'fill');
+copyProjectLoaderProp(spec,obj,'stroke');
+copyProjectLoaderProp(spec,obj,'strokeWidth');
+restoreProjectLoaderStrokeShift(spec);
+return spec;
+}
+
+if(type==='textbox'||type==='text'||type==='i-text'||type==='vertical-textbox'){
+spec.text=obj.text||'';
+spec.width=numOr(obj.width,0);
+spec.height=numOr(obj.height,0);
+copyProjectLoaderProp(spec,obj,'fontSize');
+copyProjectLoaderProp(spec,obj,'fontFamily');
+copyProjectLoaderProp(spec,obj,'fill');
+copyProjectLoaderProp(spec,obj,'textAlign');
+copyProjectLoaderProp(spec,obj,'lineHeight');
+return spec;
+}
+
+if(type==='group'){
+spec.children=(obj.getObjects?obj.getObjects():[]).map(serializeLayerForProjectLoader).filter(Boolean);
+return spec;
+}
+
+return spec;
+}
+
+function normalizeProjectLoaderType(obj){
+if(obj.type==='vertical-textbox') return 'vertical-textbox';
+if(obj.type==='textbox'||obj.type==='text'||obj.type==='i-text') return obj.type;
+if(obj.type==='image'||obj.type==='rect'||obj.type==='polygon'||obj.type==='path'||obj.type==='group') return obj.type;
+return obj.type||'object';
+}
+
+function copyProjectLoaderProp(spec,obj,prop){
+if(obj[prop]!==undefined) spec[prop]=obj[prop];
+}
+
+function extractProjectLoaderImageSrc(obj){
+if(typeof obj.getSrc==='function'){
+return obj.getSrc();
+}
+return obj.src||'';
+}
+
+function restoreProjectLoaderStrokeShift(spec){
+const shift=strokeShift(spec);
+spec.left=numOr(spec.left,0)+shift;
+spec.top=numOr(spec.top,0)+shift;
 }

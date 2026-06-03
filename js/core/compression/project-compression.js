@@ -123,6 +123,9 @@ compressionLogger.info("[btmSaveProjectFile] START guid="+guid+" openDrawer="+op
 var result=await generateBlobProjectFile();
 compressionLogger.info("[btmSaveProjectFile] generated blob, calling btmAddImage guid="+guid);
 btmAddImage({href:result.previewDataUrl},result.lz4Blob,guid,openDrawer);
+if(window.ProjectLoader&&typeof window.ProjectLoader.syncCurrentPageEdit==='function'){
+await window.ProjectLoader.syncCurrentPageEdit(guid);
+}
 compressionLogger.info("[btmSaveProjectFile] DONE btmProjectsMap.size="+btmProjectsMap.size);
 } catch (error) {
 compressionLogger.error("[btmSaveProjectFile] ERROR",error);
