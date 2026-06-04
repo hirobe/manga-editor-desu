@@ -1,13 +1,19 @@
-# 外部ページ読み込みフォーマット仕様
+# ページ JSON フォーマット仕様（読み込み・保存）
 
-外部ツールから生成したマンガページを Manga Editor DESU に取り込むためのデータ形式仕様。
+Manga Editor DESU のページ JSON データ形式仕様。**読み込み（外部生成ページの取り込み）と保存（編集内容の書き戻し）は同一スキーマ**を使う。
+
+- **読み込み**: 外部ツールから生成したマンガページ `pages/pXXX_page.json` を取り込む（`loadProjectPagesFromFolder`）。
+- **保存（編集出力）**: 編集したページを `pages/pXXX_page_edit.json` に書き戻す（`syncCurrentPageEdit` → `serializeCurrentPageForProjectLoader`）。出力はこの**入力スキーマと同一形**に正規化される（[編集保存の出力仕様](#編集保存-pxxx_page_editjson-の出力仕様)参照）。
+
+ローダは同じページ番号に `_edit.json` があればそちらを優先採用する。よって「`_page.json` で取り込み → 編集 → `_page_edit.json` に保存 → 次回は `_edit` から復元」という往復が同じスキーマで閉じる。
 
 ## ステータス
 
-| 形式 | 状態 | 経路 |
-|---|---|---|
-| `pages/pXXX_page.json` (レイヤー構造保持) | **実装済み** | `js/ui/project-loader.js` |
-| 既存 `*.lz4` プロジェクトファイル | 実装済み | `js/project-management.js` |
+| 形式 | 役割 | 状態 | 経路 |
+|---|---|---|---|
+| `pages/pXXX_page.json` (レイヤー構造保持) | 読み込み（外部生成の入力） | **実装済み** | `js/ui/project-loader.js` |
+| `pages/pXXX_page_edit.json` | 保存（編集内容の書き戻し） | **実装済み** | `js/ui/project-loader.js` |
+| 既存 `*.lz4` プロジェクトファイル | プロジェクト全体の保存/読込 | 実装済み | `js/project-management.js` |
 
 レイヤー構造を保ったページを外部生成する場合は、本ドキュメントの JSON 形式を使ってください。
 
@@ -352,7 +358,63 @@ my-project/
 - **フォント**: 登録済みフォント名でないと描画が破綻する場合あり。事前にフォント登録 (`js/db/user-font-repository.js`) を済ませる
 - **clipPath の動的生成**: パネル子画像で `clipPath` を省略するとローダが `relatedPoly` から生成するが、複雑形状では誤差が出る可能性
 - **fabric カスタムプロパティ**: `commonProperties` (`js/core/settings.js`) に未登録のプロパティはシリアライズ往復で失われる。新規プロパティは仕様改訂で追加
-- **編集保存 (`pXXX_page_edit.json`) の clipPath スケール**: 編集内容を書き戻す `serializeLayerForProjectLoader` (`js/ui/project-loader.js`) は、表示中 canvas (ウィンドウフィット済み) の状態をそのまま保存する。clipPath は `resizeCanvas` で `width/height` ではなく `scaleX/scaleY` により拡縮されるため、保存時は `scaleX/scaleY` を実寸へ焼き込む (`width*scaleX`)。生の `width/height` だけ保存すると、再読込で `scaleX=1` の Rect を生成しクリップ窓が画像スケールと食い違い、画像がコマ枠からはみ出してレイアウトが崩れる
+- **編集保存 (`pXXX_page_edit.json`)**: 詳細は [編集保存の出力仕様](#編集保存-pxxx_page_editjson-の出力仕様) を参照。出力は入力スキーマへ正規化される（`scaleX`/明示`clipPath`/`preserveTransform` は出力されない）。
+
+## 編集保存 (`pXXX_page_edit.json`) の出力仕様
+
+編集したページは `pages/pXXX_page_edit.json` に書き戻される。出力は**上記の入力スキーマと同一形**になるよう、表示中（ウィンドウフィット済み）のフラットな fabric キャンバスから正規化して生成される。実装は `serializeCurrentPageForProjectLoader` ほか `plSerialize*` 群（`js/ui/project-loader.js`）。
+
+### いつ・どこに書かれるか
+
+- 書き込みトリガ: `btmSaveProjectFile` → `syncCurrentPageEdit`（自動保存 `AutoSaveManager`〔既定60秒〕、明示保存、ページ切替時など）。取り込み直後の復元中（`projectLoaderRestoring`）はスキップ。
+- 出力先: 取り込み元が `pXXX_page.json` なら同ディレクトリの `pXXX_page_edit.json`。初回は元ファイルを `copyFrom` で複製してから上書きする。
+- 読み込み時、同じページ番号に `_edit.json` があれば**そちらが優先採用**される（`loadProjectPagesFromFolder` の集約ロジック）。
+
+### 正規化のルール
+
+1. **実ページ空間へ戻す**: 正規化係数 `F = initialCanvasWidth / canvas.getWidth()` を全座標・寸法に掛け、ウィンドウフィット分を打ち消す（縦横一様）。`initialCanvasWidth/Height`（`js/canvas-manager.js`、ページ読込時の `resizeCanvasByNum` で設定、フィット用 `resizeCanvas` では不変）が基準。これにより `pageSize` が窓サイズ依存でドリフトしない。
+2. **scale=1 化**: 各オブジェクトの `scaleX/scaleY` を `width`/`height`/`points`/`path の d`/`fontSize`/`clipPath` へ畳み込む。出力には **`scaleX`/`scaleY`/`originX`/`originY`/`preserveTransform`/明示 `clipPath` を含めない**（入力スキーマ通り scale=1 前提）。
+3. **階層を復元**: フラットなキャンバスを `guids`（親→子）を正に階層化する（`relatedPoly` は `commonProperties` 外で Undo/Redo 時に失われるため使わない）。コマ（`isPanel`）の子（画像・吹き出し）を `children` にネストし、吹き出し本体（`customType=speechBubbleSVG`）とそのテキストを `type:group` に再合成する。
+4. **画像はコマ領域(area)のみ**: 画像の `clipPath`（コマ領域）から `left/top/width/height` を算出して出力。スケール/`clipPath` は再読込時に `createImageLayer` の cover-fit 分岐が再生成する。
+5. **strokeShift 戻し**: `left/top` は幾何角に戻す（出力時に `strokeWidth/2` を加算）。`strokeWidth` も `×F` でページ空間化する。
+
+### トップレベル出力
+
+| キー | 値 |
+|---|---|
+| `version` | `"1.0"` 固定 |
+| `pageSize` | `{width: initialCanvasWidth, height: initialCanvasHeight}`（エディタ論理ページ寸法） |
+| `canvasGuid` | 現在ページの guid |
+| `layers` | top-level レイヤー（他レイヤーの `guids` に含まれないもの）を奥→手前順で。コマ/吹き出しは `children` を内包、それ以外の独立オブジェクト（背景画像・独立テキスト等）は loose に並列 |
+
+> `basePrompt` は編集保存では出力されない（AI 生成情報は lz4 プロジェクト側が保持）。
+
+### 種別ごとの出力フィールド
+
+共通: `guid`, `type`, `left`, `top`（×F）と、値があれば `customType`/`name`/`angle`/`opacity`/`visible`/`selectable`。
+
+| 種別 | 出力されるフィールド | 備考 |
+|---|---|---|
+| コマ rect (`isPanel`) | 共通 + `isPanel:true`, `width`, `height`, `fill`, `stroke`, `strokeWidth`, `guids`, `children` | `width/height = obj.width/height × scaleX/Y × F`。子は `relatedPoly=コマguid` 付き |
+| コマ polygon (`isPanel`) | 上記 + `points` | `points` は `× scaleX × F`（scale 畳み込み） |
+| 画像 image | 共通 + `src`, `width`, `height` | `left/top/width/height` はコマ領域（`clipPath` から算出）。`scaleX/clipPath/preserveTransform` は**無し** |
+| 吹き出し（→ group） | `type:"group"`, `customType:"speechBubbleSVG"`, `left`, `top`, `name`, `guids:[shape, text]`, `children:[shape, textbox]` | グループ原点=本体シェイプ幾何左上。子はローカル座標。shape child は `<guid>-shape` |
+| └ 本体 shape | `type`(path/polygon/rect), `left:0`, `top:0`, geometry(`d`/`points`/`width,height`), `fill`, `stroke`, `strokeWidth` | `d`/`points` は scale 畳み込み済み |
+| └ テキスト | テキスト出力（下記）をグループローカル座標化 | |
+| テキスト textbox/text/i-text | 共通 + `text`, `width`, `height`, `fontSize`, `fontFamily`, `fill`, `textAlign`, `lineHeight` | `width = obj.width × scaleX × F`、`fontSize × F` |
+| テキスト vertical-textbox | 上記。ただし `left` は中心X→領域左上へ補正（`left = obj.left×F − width/2`） | 読込側が中央寄せするため |
+| 独立 path/rect/polygon | 共通 + geometry, `fill`, `stroke`, `strokeWidth`, （あれば)`guids` | freehand 吹き出し本体（`customType=freehandBubblePath`）はここ。`d`/`points` は scale 畳み込み |
+| 汎用 group | 共通 + `children`（子を再帰出力） | |
+
+非保存対象（`excludeFromLayerPanel` / `isIcon`）のオブジェクトは出力しない。
+
+### 後方互換・既知の制限
+
+- ローダ（読込, `addJsonAsPage`〜）は変更しておらず、**入力 `_page.json` も編集 `_edit.json` も同じパスで読める**。
+- `pageSize` はエディタ論理ページ寸法。エディタはロード時にページをコンテナへ縮小するため、元 `_page.json` の authoring 寸法（例 800×1200）より小さい場合がある（比率は同一・往復で安定）。
+- 入力スキーマは画像を「コマ領域 + cover-fit」でしか表せないため、コマ内で画像を手動移動/ズームした状態は再読込で中央 cover-fit に戻る（入力フォーマット自体の表現限界）。
+- 吹き出しテキスト幅に `fabric.Textbox.width` 由来の微小な往復差（数%）が生じうる。
+- freehand 吹き出しは group 化せず、本体 path を top-level、テキスト/矩形を loose 出力する（読込側に freehand 用の group 展開が無いため）。詳細状態は lz4 プロジェクト側が真とする。
 
 ## 実装概要
 
@@ -365,6 +427,9 @@ my-project/
 | `addLayerWithChildren(spec, pagesBasePath)` | レイヤーを add し、`group` 以外の `children` を再帰的に並列 add |
 | `enlivenLayer(spec, pagesBasePath)` | `type` で分岐して fabric オブジェクトを生成 (`group` の `children` は内部統合) |
 | `resolveSrc(src, pagesBasePath)` | 相対パスは `/api/file?path=<HOME相対>` に解決 (data:/http(s) はそのまま) |
+| `syncCurrentPageEdit(guid)` | 現在ページを `pXXX_page_edit.json` に書き戻す（`btmSaveProjectFile` から呼ばれる） |
+| `serializeCurrentPageForProjectLoader(guid)` | キャンバスを入力スキーマへ正規化（F算出 + `guids` 階層化 + type別 `plSerialize*`） |
+| `plPageScaleFactor()` / `plSerializePanel` / `plSerializeImage` / `plSerializeBubbleGroup` / `plSerializeText` / `plSerializeShape` ほか | 正規化係数算出と type 別シリアライズ |
 
 未対応 (将来):
 - 親子関係 (`guids` / `relatedPoly`) はメタプロパティとして保持するが、`clipPath` の動的再生成は未対応
