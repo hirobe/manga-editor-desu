@@ -667,7 +667,10 @@ copyProjectLoaderProp(spec,obj,'fontFamily');
 copyProjectLoaderProp(spec,obj,'fill');
 copyProjectLoaderProp(spec,obj,'textAlign');
 copyProjectLoaderProp(spec,obj,'lineHeight');
-if(obj.fontSize!==undefined) spec.fontSize=numOr(obj.fontSize,16)*F;
+// fontSizeも幅/高さと同様にscaleを畳み込む(×scaleX×F)。fontSizeはresizeCanvasの
+// ウィンドウフィットで変化せずscaleXに吸収されるため、×Fだけだとフィット倍率(scaleX)
+// 分ずれ、保存→再読込のたびにfontSizeがドリフトする。アスペクト一様でscaleX==scaleY。
+if(obj.fontSize!==undefined) spec.fontSize=numOr(obj.fontSize,16)*numOr(obj.scaleX,1)*F;
 if(type==='vertical-textbox'||obj.originX==='center'){
 spec.left=numOr(obj.left,0)*F-w/2;
 }
