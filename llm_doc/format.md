@@ -401,7 +401,7 @@ my-project/
 | 吹き出し（→ group） | `type:"group"`, `customType:"speechBubbleSVG"`, `left`, `top`, `name`, `guids:[shape, text]`, `children:[shape, textbox]` | グループ原点=本体シェイプ幾何左上。子はローカル座標。shape child は `<guid>-shape` |
 | └ 本体 shape | `type`(path/polygon/rect), `left:0`, `top:0`, geometry(`d`/`points`/`width,height`), `fill`, `stroke`, `strokeWidth` | `d`/`points` は scale 畳み込み済み |
 | └ テキスト | テキスト出力（下記）をグループローカル座標化 | |
-| テキスト textbox/text/i-text | 共通 + `text`, `width`, `height`, `fontSize`, `fontFamily`, `fill`, `textAlign`, `lineHeight` | `width = obj.width × scaleX × F`、`fontSize × F` |
+| テキスト textbox/text/i-text | 共通 + `text`, `width`, `height`, `fontSize`, `fontFamily`, `fill`, `textAlign`, `lineHeight` | `width = obj.width × scaleX × F`、`fontSize = obj.fontSize × scaleX × F`（width 同様 scale を畳み込む。`×F` だけだとフィット倍率分ドリフトする） |
 | テキスト vertical-textbox | 上記。ただし `left` は中心X→領域左上へ補正（`left = obj.left×F − width/2`） | 読込側が中央寄せするため |
 | 独立 path/rect/polygon | 共通 + geometry, `fill`, `stroke`, `strokeWidth`, （あれば)`guids` | freehand 吹き出し本体（`customType=freehandBubblePath`）はここ。`d`/`points` は scale 畳み込み |
 | 汎用 group | 共通 + `children`（子を再帰出力） | |
