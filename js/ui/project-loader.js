@@ -478,115 +478,261 @@ pageFile.copyFrom=null;
 pageFile.sourcePath=pageFile.editPath;
 }
 
+// 編集ページを入力フォーマット(pXXX_page.json, llm_doc/format.md)と同一スキーマで
+// 書き出す。表示中(フィット済み)キャンバスを、実ページ寸法・scale=1・階層構造へ
+// 正規化する。ローダ側(addJsonAsPage系)は変更せず、入力フォーマットの読込パスで
+// そのまま読める形にする(preserveTransform/明示clipPath/明示scaleXは出力しない)。
 function serializeCurrentPageForProjectLoader(guid){
+const F=plPageScaleFactor();
+const objs=canvas.getObjects();
+// 副作用なしのguid->objマップ(createGUIDMapはguid生成代入の副作用があるため使わない)
+const guidMap=new Map();
+objs.forEach(o=>{ if(o&&o.guid) guidMap.set(o.guid,o); });
+// パネル/吹き出し本体が「子」として参照するguid。これらはchildrenにネストし
+// top-levelには出さない。freehand等は子を吸い上げずloose展開する。
+const childGuids=new Set();
+objs.forEach(o=>{
+if(o&&Array.isArray(o.guids)&&(o.isPanel||isSpeechBubbleSVG(o))){
+o.guids.forEach(g=>childGuids.add(g));
+}
+});
+const layers=objs
+.filter(o=>plIsSerializable(o)&&!(o.guid&&childGuids.has(o.guid)))
+.map(o=>plSerializeNode(o,F,guidMap))
+.filter(Boolean);
 return {
 version:'1.0',
 pageSize:{
-width:canvas.getWidth(),
-height:canvas.getHeight()
+width:initialCanvasWidth||canvas.getWidth(),
+height:initialCanvasHeight||canvas.getHeight()
 },
 canvasGuid:guid||getCanvasGUID(),
-layers:canvas.getObjects().map(serializeLayerForProjectLoader).filter(Boolean)
+layers:layers
 };
 }
 
-function serializeLayerForProjectLoader(obj){
-if(!obj) return null;
+// 表示空間→論理ページ空間の倍率(縦横一様)。initialCanvasWidth/Heightはエディタの
+// 論理キャンバス寸法で、ウィンドウフィット用resizeCanvasでは不変=安定した基準。
+// これによりpageSizeがウィンドウ依存でドリフトしない。
+function plPageScaleFactor(){
+const w=canvas.getWidth();
+if(!initialCanvasWidth||!w) return 1;
+return initialCanvasWidth/w;
+}
+
+// レイヤーパネル非表示やアイコン等の一時オブジェクトは保存対象外。
+function plIsSerializable(obj){
+if(!obj) return false;
+if(obj.excludeFromLayerPanel) return false;
+if(obj.isIcon) return false;
+return true;
+}
+
+function plSerializeNode(obj,F,guidMap){
+if(!plIsSerializable(obj)) return null;
+if(obj.isPanel) return plSerializePanel(obj,F,guidMap);
+if(isSpeechBubbleSVG(obj)) return plSerializeBubbleGroup(obj,F,guidMap);
 const type=normalizeProjectLoaderType(obj);
+if(type==='image') return plSerializeImage(obj,F);
+if(type==='textbox'||type==='text'||type==='i-text'||type==='vertical-textbox') return plSerializeText(obj,F);
+if(type==='rect'||type==='polygon'||type==='path') return plSerializeShape(obj,F);
+if(type==='group') return plSerializeGenericGroup(obj,F,guidMap);
+return plSerializeBase(obj,F);
+}
+
+// 共通プロパティ(scaleX/scaleY/originX/originY/preserveTransform/clipPathは出さない)。
+// left/topは実ページ空間へ(×F)。
+function plSerializeBase(obj,F){
 const spec={
 guid:obj.guid||generateGUID(),
-type:type,
-left:numOr(obj.left,0),
-top:numOr(obj.top,0)
+type:normalizeProjectLoaderType(obj),
+left:numOr(obj.left,0)*F,
+top:numOr(obj.top,0)*F
 };
 copyProjectLoaderProp(spec,obj,'customType');
 copyProjectLoaderProp(spec,obj,'name');
 copyProjectLoaderProp(spec,obj,'angle');
-copyProjectLoaderProp(spec,obj,'scaleX');
-copyProjectLoaderProp(spec,obj,'scaleY');
-copyProjectLoaderProp(spec,obj,'originX');
-copyProjectLoaderProp(spec,obj,'originY');
 copyProjectLoaderProp(spec,obj,'opacity');
 copyProjectLoaderProp(spec,obj,'visible');
 copyProjectLoaderProp(spec,obj,'selectable');
-copyProjectLoaderProp(spec,obj,'relatedPoly');
-if(Array.isArray(obj.guids)) spec.guids=obj.guids.slice();
-if(obj.isPanel) spec.isPanel=true;
-
-if(type==='image'){
-spec.src=obj.projectLoaderSrc||extractProjectLoaderImageSrc(obj);
-spec.width=numOr(obj.width,0);
-spec.height=numOr(obj.height,0);
-spec.scaleX=numOr(obj.scaleX,1);
-spec.scaleY=numOr(obj.scaleY,1);
-spec.preserveTransform=true;
-if(obj.clipPath){
-// clipPathはリサイズ時にwidth/heightではなくscaleX/scaleYで拡縮される
-// (resizeCanvas)。生のwidth/heightだけ保存すると、再読込でscaleX=1のRectを
-// 作るため窓サイズが画像スケールと食い違い、画像がコマ枠からはみ出す。
-// scaleX/scaleYを実寸へ焼き込んでスケール非依存にする。left/topは絶対座標で
-// スケール済みのためそのまま使う。
-const cp=obj.clipPath;
-spec.clipPath={
-left:numOr(cp.left,0),
-top:numOr(cp.top,0),
-width:numOr(cp.width,0)*numOr(cp.scaleX,1),
-height:numOr(cp.height,0)*numOr(cp.scaleY,1)
-};
-}
 return spec;
 }
 
-if(type==='rect'){
-spec.width=numOr(obj.width,0);
-spec.height=numOr(obj.height,0);
+// パネル直下の子(画像・吹き出し)をchildrenにネストし、guids/relatedPolyを整える。
+function plAttachPanelChildren(spec,obj,F,guidMap){
+if(!Array.isArray(obj.guids)) return;
+const children=[];
+const guids=[];
+obj.guids.forEach(g=>{
+const child=guidMap.get(g);
+if(!child||!plIsSerializable(child)) return;
+const childSpec=plSerializeNode(child,F,guidMap);
+if(!childSpec) return;
+childSpec.relatedPoly=obj.guid;
+children.push(childSpec);
+guids.push(g);
+});
+if(guids.length) spec.guids=guids;
+if(children.length) spec.children=children;
+}
+
+// パネル(rect/polygon, isPanel)。width/height/strokeWidthへscaleを畳んでページ空間化。
+function plSerializePanel(obj,F,guidMap){
+const type=normalizeProjectLoaderType(obj);
+const spec=plSerializeBase(obj,F);
+spec.isPanel=true;
+const scaleX=numOr(obj.scaleX,1),scaleY=numOr(obj.scaleY,1);
+spec.width=numOr(obj.width,0)*scaleX*F;
+spec.height=numOr(obj.height,0)*scaleY*F;
 copyProjectLoaderProp(spec,obj,'fill');
 copyProjectLoaderProp(spec,obj,'stroke');
-copyProjectLoaderProp(spec,obj,'strokeWidth');
-restoreProjectLoaderStrokeShift(spec);
-return spec;
-}
-
+spec.strokeWidth=numOr(obj.strokeWidth,0)*F;
 if(type==='polygon'){
-spec.points=Array.isArray(obj.points)?obj.points.map(p=>({x:p.x,y:p.y})):[];
-spec.width=numOr(obj.width,0);
-spec.height=numOr(obj.height,0);
-copyProjectLoaderProp(spec,obj,'fill');
-copyProjectLoaderProp(spec,obj,'stroke');
-copyProjectLoaderProp(spec,obj,'strokeWidth');
+// pointsは形状ローカル座標(obj.scaleXで拡縮される)。読込側はpointsをscale=1で
+// 使うため、scaleXとFを畳んでページ空間の実寸へする(F だけだと scaleX 分はみ出す)。
+spec.points=plScalePoints(obj,F);
+}
 restoreProjectLoaderStrokeShift(spec);
+plAttachPanelChildren(spec,obj,F,guidMap);
 return spec;
 }
 
-if(type==='path'){
-spec.d=Array.isArray(obj.path)?obj.path.map(cmd=>cmd.join(' ')).join(' '):(obj.d||'');
-spec.width=numOr(obj.width,0);
-spec.height=numOr(obj.height,0);
-copyProjectLoaderProp(spec,obj,'fill');
-copyProjectLoaderProp(spec,obj,'stroke');
-copyProjectLoaderProp(spec,obj,'strokeWidth');
-restoreProjectLoaderStrokeShift(spec);
+// polygon等のpointsをページ空間(scale畳み込み)へ。x*scaleX*F, y*scaleY*F。
+function plScalePoints(obj,F){
+const sx=numOr(obj.scaleX,1)*F,sy=numOr(obj.scaleY,1)*F;
+return Array.isArray(obj.points)?obj.points.map(p=>({x:p.x*sx,y:p.y*sy})):[];
+}
+
+// path の d をページ空間へ。d座標もローカル(scaleXで拡縮)のため、scaleとFを畳む。
+// パネル/吹き出しはアスペクト一様(scaleX==scaleY)のため一様倍率で全数値をスケール。
+function plScalePathD(obj,F){
+const s=numOr(obj.scaleX,1)*F;
+if(!Array.isArray(obj.path)) return obj.d||'';
+return obj.path.map(cmd=>cmd.map((t,i)=>(i===0||typeof t!=='number')?t:+(t*s).toFixed(3)).join(' ')).join(' ');
+}
+
+// 画像。コマ領域(clipPath)からleft/top/width/heightを算出し、scaleX/clipPath/
+// preserveTransformは出さない。ローダがcover-fitとclipPathを再生成する。
+function plSerializeImage(obj,F){
+const spec=plSerializeBase(obj,F);
+spec.src=obj.projectLoaderSrc||extractProjectLoaderImageSrc(obj);
+let ax,ay,aw,ah;
+const cp=obj.clipPath;
+if(cp&&numOr(cp.width,0)&&numOr(cp.height,0)){
+ax=numOr(cp.left,0);
+ay=numOr(cp.top,0);
+aw=numOr(cp.width,0)*numOr(cp.scaleX,1);
+ah=numOr(cp.height,0)*numOr(cp.scaleY,1);
+}else{
+const br=obj.getBoundingRect(true,true);
+ax=br.left;ay=br.top;aw=br.width;ah=br.height;
+}
+spec.left=ax*F;
+spec.top=ay*F;
+spec.width=aw*F;
+spec.height=ah*F;
 return spec;
 }
 
-if(type==='textbox'||type==='text'||type==='i-text'||type==='vertical-textbox'){
+// loose な path/rect/polygon(非パネル)。freehand吹き出し等はcustomType/guidsを保持。
+function plSerializeShape(obj,F){
+const type=normalizeProjectLoaderType(obj);
+const spec=plSerializeBase(obj,F);
+const scaleX=numOr(obj.scaleX,1),scaleY=numOr(obj.scaleY,1);
+spec.width=numOr(obj.width,0)*scaleX*F;
+spec.height=numOr(obj.height,0)*scaleY*F;
+copyProjectLoaderProp(spec,obj,'fill');
+copyProjectLoaderProp(spec,obj,'stroke');
+spec.strokeWidth=numOr(obj.strokeWidth,0)*F;
+if(type==='polygon'){
+spec.points=plScalePoints(obj,F);
+}else if(type==='path'){
+spec.d=plScalePathD(obj,F);
+}
+restoreProjectLoaderStrokeShift(spec);
+if(Array.isArray(obj.guids)) spec.guids=obj.guids.slice();
+return spec;
+}
+
+// テキスト。width/fontSizeへscaleを畳んでページ空間化。vertical-textbox(およびcenter
+// originの横書き)は読込側が領域中央へ寄せるため、中心X→領域左上に逆補正する。
+function plSerializeText(obj,F){
+const type=normalizeProjectLoaderType(obj);
+const spec=plSerializeBase(obj,F);
 spec.text=obj.text||'';
-spec.width=numOr(obj.width,0);
-spec.height=numOr(obj.height,0);
-if(type==='vertical-textbox') spec.preserveTransform=true;
-copyProjectLoaderProp(spec,obj,'fontSize');
+const w=numOr(obj.width,0)*numOr(obj.scaleX,1)*F;
+spec.width=w;
+spec.height=numOr(obj.height,0)*numOr(obj.scaleY,1)*F;
 copyProjectLoaderProp(spec,obj,'fontFamily');
 copyProjectLoaderProp(spec,obj,'fill');
 copyProjectLoaderProp(spec,obj,'textAlign');
 copyProjectLoaderProp(spec,obj,'lineHeight');
+if(obj.fontSize!==undefined) spec.fontSize=numOr(obj.fontSize,16)*F;
+if(type==='vertical-textbox'||obj.originX==='center'){
+spec.left=numOr(obj.left,0)*F-w/2;
+}
 return spec;
 }
 
-if(type==='group'){
-spec.children=(obj.getObjects?obj.getObjects():[]).map(serializeLayerForProjectLoader).filter(Boolean);
-return spec;
+// 吹き出し(speechBubbleSVG)を入力フォーマットの group(customType)+children[shape,text]
+// へ再合成する。グループ原点=本体シェイプの幾何左上(ページ空間)、子はローカル座標。
+function plSerializeBubbleGroup(shape,F,guidMap){
+const type=normalizeProjectLoaderType(shape);
+const sw=numOr(shape.strokeWidth,0)*F;
+const gx=numOr(shape.left,0)*F+sw/2;
+const gy=numOr(shape.top,0)*F+sw/2;
+const group={
+guid:shape.guid||generateGUID(),
+type:'group',
+customType:'speechBubbleSVG',
+left:gx,
+top:gy
+};
+copyProjectLoaderProp(group,shape,'name');
+// 本体シェイプ(グループ原点=ローカル0,0)
+const shapeChild={
+guid:(shape.guid||generateGUID())+'-shape',
+type:type,
+left:0,
+top:0
+};
+if(type==='path'){
+shapeChild.d=plScalePathD(shape,F);
+}else if(type==='polygon'){
+shapeChild.points=plScalePoints(shape,F);
+}else{
+shapeChild.width=numOr(shape.width,0)*numOr(shape.scaleX,1)*F;
+shapeChild.height=numOr(shape.height,0)*numOr(shape.scaleY,1)*F;
+}
+copyProjectLoaderProp(shapeChild,shape,'fill');
+copyProjectLoaderProp(shapeChild,shape,'stroke');
+shapeChild.strokeWidth=sw;
+const children=[shapeChild];
+const guids=[shapeChild.guid];
+// テキスト子(guidsの中からテキストを探す)
+let text=null;
+(shape.guids||[]).forEach(g=>{
+const c=guidMap.get(g);
+if(c&&isText(c)&&plIsSerializable(c)&&!text) text=c;
+});
+if(text){
+const textSpec=plSerializeText(text,F);
+// plSerializeTextが返す絶対(ページ空間)left/topをグループローカルへ
+textSpec.left=numOr(textSpec.left,0)-gx;
+textSpec.top=numOr(textSpec.top,0)-gy;
+children.push(textSpec);
+guids.push(text.guid||textSpec.guid);
+}
+group.guids=guids;
+group.children=children;
+return group;
 }
 
+// customType無しの汎用group(稀)。子をそのまま再帰シリアライズ。
+function plSerializeGenericGroup(obj,F,guidMap){
+const spec=plSerializeBase(obj,F);
+const kids=(obj.getObjects?obj.getObjects():[]);
+spec.children=kids.map(k=>plSerializeNode(k,F,guidMap)).filter(Boolean);
 return spec;
 }
 
