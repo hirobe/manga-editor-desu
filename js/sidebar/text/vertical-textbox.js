@@ -55,7 +55,10 @@ const textHeight=this._getTextHeight();
 let newWidth=Math.max(this.minWidth,Math.min(textWidth,this.maxWidth));
 let newHeight=Math.max(this.minHeight,Math.min(textHeight,this.maxHeight));
 if(this.width!==newWidth||this.height!==newHeight){const oldRight=this.left+oldWidth;
-const calculatedLeft=oldRight-newWidth;
+// originX='center'(プロジェクト読込時の吹き出しテキスト)は中心を固定する。
+// left基準(右端固定)で再配置すると、改行で複数列になり幅が広がった分だけ
+// 中心が左へずれてしまうため。それ以外(originX='left')は従来どおり右端固定。
+const calculatedLeft=this.originX==='center'?oldLeft:oldRight-newWidth;
 if(calculatedLeft<-10000||calculatedLeft>10000){textLogger.error('異常なleft値検出:',calculatedLeft);
 console.trace()};
 this.set({left:calculatedLeft,width:newWidth,height:newHeight*1.35});
@@ -68,7 +71,7 @@ const textWidth=this._getTextWidth();
 const textHeight=this._getTextHeight();
 let newWidth=Math.max(this.minWidth,Math.min(textWidth,this.maxWidth));
 let newHeight=Math.max(this.minHeight,Math.min(textHeight,this.maxHeight));
-if(this.width!==newWidth||this.height!==newHeight){const newLeft=oldRight-newWidth;
+if(this.width!==newWidth||this.height!==newHeight){const newLeft=this.originX==='center'?oldLeft:oldRight-newWidth;
 this.set({left:newLeft,width:newWidth,height:newHeight});
 this.setCoords();
 this.canvas&&this.canvas.renderAll()}};
