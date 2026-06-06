@@ -100,6 +100,8 @@ Manga Editor DESU のページ JSON データ形式仕様。**読み込み（外
 | `opacity` | ✕ | number | 0.0〜1.0。デフォルト 1.0 |
 | `visible` | ✕ | boolean | デフォルト true |
 | `selectable` | ✕ | boolean | デフォルト true |
+| `flipX`, `flipY` | ✕ | boolean | 反転。デフォルト false。値が true のときのみ出力 |
+| `skewX`, `skewY` | ✕ | number | スキュー(度)。デフォルト 0。0 以外のときのみ出力。倍率 F の影響を受けない |
 | `guids` | ✕ | string[] | 子レイヤーの guid 配列 (親子関係) |
 | `relatedPoly` | ✕ | UUID | 親レイヤーの guid (子からの逆参照) |
 
@@ -168,13 +170,16 @@ Manga Editor DESU のページ JSON データ形式仕様。**読み込み（外
 - 縦書きは `type="vertical-textbox"`
 - `left`/`top`/`width`/`height` はテキスト領域(矩形)を表す。ローダは領域内に中央寄せ(`originX:center`)で配置する。縦書きの `height` は縦列の折返し長として使われるため、領域の高さを指定する(省略時は `width` で近似)
 - フォントは `js/core/font/` に登録済みのもの推奨。未登録だと別フォントにフォールバックされない (fallback禁止方針)
+- 装飾系の追加フィールド(任意): `fontWeight`(太字), `fontStyle`(斜体), `underline`/`linethrough`/`overline`, `backgroundColor`(オブジェクト背景), `textBackgroundColor`(縦書き等の文字背景), `charSpacing`(1/1000em 相対・倍率非依存), `stroke`/`strokeWidth`(輪郭・ネオン)。`strokeWidth` は `fontSize` と同様にページ空間化される(`×scaleX×F`)
 
 #### 吹き出し (`customType="speechBubbleSVG"`)
 
-吹き出しはテキストと SVG パスの組合せ。JSON 上はグループ単位で定義するが、**ローダはグループにまとめず、本体(シェイプ)とテキストを別オブジェクトとして展開して配置する** (`addSpeechBubbleSeparate`)。
-- 本体: シェイプ(path/polygon/rect)を `customType="speechBubbleSVG"` のオブジェクトにし、グループの `guid`/`relatedPoly` を引き継ぐ。`guids` には配下テキストの guid を入れる
-- テキスト: 独立した通常のテキストオブジェクト。`relatedPoly` で本体を参照
-- 子のローカル座標はグループの `left`/`top` を足して絶対座標化する
+吹き出しはテキストと SVG パスの組合せ。JSON 上はグループ単位で定義するが、**ローダはグループにまとめず、本体(シェイプ)とテキストを別オブジェクトとして展開して配置する** (`addSpeechBubbleSeparate`)。**シェイプとテキストは互いに独立して移動できる対等な子**で、どちらかを動かしてももう一方は追従しない。
+
+- グループの `left`/`top` は **shape と text を囲む安定アンカー**(両者の左上の最小)。シェイプの位置ではない。
+- shape も text も **アンカー基準の独立した相対座標** (`left`/`top`) を持つ。子の絶対座標 = グループ `left`/`top` + 子 `left`/`top`。
+- 本体: シェイプ(path/polygon/rect)を `customType="speechBubbleSVG"` のオブジェクトにし、グループの `guid`/`relatedPoly` を引き継ぐ。`guids` には配下テキストの guid を入れる。`d`/`points` はシェイプ自身のローカル原点基準で、配置は子の `left`/`top` が担う。
+- テキスト: 独立した通常のテキストオブジェクト。`relatedPoly` で本体を参照。
 
 ```json
 {
@@ -187,6 +192,7 @@ Manga Editor DESU のページ JSON データ形式仕様。**読み込み（外
     {
       "guid": "uuid-bubble-rect",
       "type": "path",
+      "left": 0, "top": 0,
       "d": "M 0 0 L 100 0 L 100 50 L 50 60 L 0 50 Z",
       "fill": "white",
       "stroke": "black",
@@ -196,12 +202,16 @@ Manga Editor DESU のページ JSON データ形式仕様。**読み込み（外
       "guid": "uuid-bubble-text",
       "type": "textbox",
       "text": "こんにちは！",
-      "left": 10, "top": 10,
+      "left": 120, "top": 200,
       "fontSize": 16
     }
   ]
 }
 ```
+
+> 上の例ではテキストをシェイプから離して配置している(text の `left/top` がシェイプの範囲外)。シェイプが囲みの左上なので shape は `0,0`、アンカーはシェイプ左上に一致する。
+>
+> **旧フォーマット非対応**: 以前は「グループ原点 = シェイプ左上、shape は常に `0,0`、text はシェイプ基準の相対」だった。新ローダは安定アンカー方式を前提とする。既存の旧形式ファイルは `project_template/.scripts/convert_bubble_format.py` で新形式へ変換してから読み込む(絶対位置は保持・冪等)。
 
 #### ベクターパス (`type="path"`)
 
@@ -375,7 +385,7 @@ my-project/
 1. **実ページ空間へ戻す**: 正規化係数 `F = initialCanvasWidth / canvas.getWidth()` を全座標・寸法に掛け、ウィンドウフィット分を打ち消す（縦横一様）。`initialCanvasWidth/Height`（`js/canvas-manager.js`、ページ読込時の `resizeCanvasByNum` で設定、フィット用 `resizeCanvas` では不変）が基準。これにより `pageSize` が窓サイズ依存でドリフトしない。
 2. **scale=1 化**: 各オブジェクトの `scaleX/scaleY` を `width`/`height`/`points`/`path の d`/`fontSize`/`clipPath` へ畳み込む。出力には **`scaleX`/`scaleY`/`originX`/`originY`/`preserveTransform`/明示 `clipPath` を含めない**（入力スキーマ通り scale=1 前提）。
 3. **階層を復元**: フラットなキャンバスを `guids`（親→子）を正に階層化する（`relatedPoly` は `commonProperties` 外で Undo/Redo 時に失われるため使わない）。コマ（`isPanel`）の子（画像・吹き出し）を `children` にネストし、吹き出し本体（`customType=speechBubbleSVG`）とそのテキストを `type:group` に再合成する。
-4. **画像はコマ領域(area)のみ**: 画像の `clipPath`（コマ領域）から `left/top/width/height` を算出して出力。スケール/`clipPath` は再読込時に `createImageLayer` の cover-fit 分岐が再生成する。
+4. **画像は実変換を保存**: コマ配下の画像は手動移動/ズームを保持するため、実位置 `left/top`・`scaleX/scaleY`・コマ窓 `clipPath` を `preserveTransform:true` 付きで出力する。ローダはこの場合 cover-fit せず実変換を復元する。コマ外の loose 画像は boundingRect から `left/top/width/height` を出す。
 5. **strokeShift 戻し**: `left/top` は幾何角に戻す（出力時に `strokeWidth/2` を加算）。`strokeWidth` も `×F` でページ空間化する。
 
 ### トップレベル出力
@@ -395,26 +405,27 @@ my-project/
 
 | 種別 | 出力されるフィールド | 備考 |
 |---|---|---|
-| コマ rect (`isPanel`) | 共通 + `isPanel:true`, `width`, `height`, `fill`, `stroke`, `strokeWidth`, `guids`, `children` | `width/height = obj.width/height × scaleX/Y × F`。子は `relatedPoly=コマguid` 付き |
+| コマ rect (`isPanel`) | 共通 + `isPanel:true`, `width`, `height`, `fill`, `stroke`, `strokeWidth`, `guids`, `children`, （あれば)`strokeDashArray`/`strokeLineCap`/`rx`/`ry` | `width/height = obj.width/height × scaleX/Y × F`。子は `relatedPoly=コマguid` 付き |
 | コマ polygon (`isPanel`) | 上記 + `points` | `points` は `× scaleX × F`（scale 畳み込み） |
-| 画像 image | 共通 + `src`, `width`, `height` | `left/top/width/height` はコマ領域（`clipPath` から算出）。`scaleX/clipPath/preserveTransform` は**無し** |
-| 吹き出し（→ group） | `type:"group"`, `customType:"speechBubbleSVG"`, `left`, `top`, `name`, `guids:[shape, text]`, `children:[shape, textbox]` | グループ原点=本体シェイプ幾何左上。子はローカル座標。shape child は `<guid>-shape` |
-| └ 本体 shape | `type`(path/polygon/rect), `left:0`, `top:0`, geometry(`d`/`points`/`width,height`), `fill`, `stroke`, `strokeWidth` | `d`/`points` は scale 畳み込み済み |
-| └ テキスト | テキスト出力（下記）をグループローカル座標化 | |
-| テキスト textbox/text/i-text | 共通 + `text`, `width`, `height`, `fontSize`, `fontFamily`, `fill`, `textAlign`, `lineHeight` | `width = obj.width × scaleX × F`、`fontSize = obj.fontSize × scaleX × F`（width 同様 scale を畳み込む。`×F` だけだとフィット倍率分ドリフトする） |
+| 画像 image | 共通 + `src`, `preserveTransform:true`, `left`, `top`, `width`, `height`, `scaleX`, `scaleY`, `clipPath{left,top,width,height}` | コマ配下は画像の実変換を保存(手動移動/ズーム保持)。`left/top`=画像実位置、`width/height`=表示サイズ、`clipPath`=コマ窓。loose 画像は `preserveTransform` 無しで boundingRect を出力 |
+| 吹き出し（→ group） | `type:"group"`, `customType:"speechBubbleSVG"`, `left`, `top`, `name`, `guids:[shape, text]`, `children:[shape, textbox]` | グループ原点 = shape+text を囲む安定アンカー(両者左上の最小)。shape/text とも**アンカー基準の独立相対座標**。shape child は `<guid>-shape` |
+| └ 本体 shape | `type`(path/polygon/rect), `left`/`top`(アンカー基準の相対), geometry(`d`/`points`/`width,height`), `fill`, `stroke`, `strokeWidth`, （あれば)`strokeDashArray`/`strokeLineCap` | `left/top` は 0,0 固定ではない。`d`/`points` はシェイプ自身のローカル原点基準で scale 畳み込み済み |
+| └ テキスト | テキスト出力（下記）をアンカー基準の相対座標化 | |
+| テキスト textbox/text/i-text | 共通 + `text`, `width`, `height`, `fontSize`, `fontFamily`, `fill`, `textAlign`, `lineHeight`, （あれば)`fontWeight`/`fontStyle`/`underline`/`linethrough`/`overline`/`backgroundColor`/`textBackgroundColor`/`charSpacing`/`stroke`/`strokeWidth` | `width = obj.width × scaleX × F`、`fontSize`/`strokeWidth = obj.値 × scaleX × F`（scale を畳み込む。`×F` だけだとフィット倍率分ドリフトする）。`charSpacing` は相対値で換算不要 |
 | テキスト vertical-textbox | 上記。ただし `left` は中心X→領域左上へ補正（`left = obj.left×F − width/2`） | 読込側が中央寄せするため |
-| 独立 path/rect/polygon | 共通 + geometry, `fill`, `stroke`, `strokeWidth`, （あれば)`guids` | freehand 吹き出し本体（`customType=freehandBubblePath`）はここ。`d`/`points` は scale 畳み込み |
+| 独立 path/rect/polygon | 共通 + geometry, `fill`, `stroke`, `strokeWidth`, （あれば)`strokeDashArray`/`strokeLineCap`/`rx`/`ry`/`guids` | freehand 吹き出し本体（`customType=freehandBubblePath`）はここ。`d`/`points` は scale 畳み込み |
 | 汎用 group | 共通 + `children`（子を再帰出力） | |
 
 非保存対象（`excludeFromLayerPanel` / `isIcon`）のオブジェクトは出力しない。
 
 ### 後方互換・既知の制限
 
-- ローダ（読込, `addJsonAsPage`〜）は変更しておらず、**入力 `_page.json` も編集 `_edit.json` も同じパスで読める**。
 - `pageSize` はエディタ論理ページ寸法。エディタはロード時にページをコンテナへ縮小するため、元 `_page.json` の authoring 寸法（例 800×1200）より小さい場合がある（比率は同一・往復で安定）。
-- 入力スキーマは画像を「コマ領域 + cover-fit」でしか表せないため、コマ内で画像を手動移動/ズームした状態は再読込で中央 cover-fit に戻る（入力フォーマット自体の表現限界）。
+- コマ内で画像を手動移動/ズームした状態は `preserveTransform` 形式で保存・復元される(往復で保持)。外部生成の `_page.json` で `preserveTransform` を省略した画像は従来通りコマ領域に cover-fit される。
 - 吹き出しテキスト幅に `fabric.Textbox.width` 由来の微小な往復差（数%）が生じうる。
 - freehand 吹き出しは group 化せず、本体 path を top-level、テキスト/矩形を loose 出力する（読込側に freehand 用の group 展開が無いため）。詳細状態は lz4 プロジェクト側が真とする。
+- **吹き出しの旧フォーマット（shape を `0,0` 固定とする形式）は読み込み非対応**。安定アンカー方式へ移行するには `project_template/.scripts/convert_bubble_format.py` で変換する（絶対位置保持・冪等・`--dry-run` 可）。
+- **まだ保存されない編集（既知の未対応）**: ブレンドモード(`globalCompositeOperation`。そもそもオブジェクトに永続化されていない)、影/グロー(`shadow`)、グラデーション/パターン `fill`、画像の glfx フィルタ(破壊適用でパラメータが残らない)。これらは編集保存往復で失われる（真の状態は lz4 プロジェクト側）。
 
 ## 実装概要
 
