@@ -222,6 +222,10 @@ if(spec.angle!==undefined) obj.angle=spec.angle;
 if(spec.opacity!==undefined) obj.opacity=spec.opacity;
 if(spec.visible!==undefined) obj.visible=spec.visible;
 if(spec.selectable!==undefined) obj.selectable=spec.selectable;
+if(spec.flipX!==undefined) obj.flipX=spec.flipX;
+if(spec.flipY!==undefined) obj.flipY=spec.flipY;
+if(spec.skewX!==undefined) obj.skewX=spec.skewX;
+if(spec.skewY!==undefined) obj.skewY=spec.skewY;
 if(spec.guid) obj.guid=spec.guid;
 if(Array.isArray(spec.guids)) obj.guids=spec.guids.slice();
 if(spec.relatedPoly) obj.relatedPoly=spec.relatedPoly;
@@ -285,9 +289,19 @@ resolve(img);
 });
 }
 
+// 線の種類(strokeDashArray)・線端/結合・角丸(rx/ry)を読み込み側へ反映。
+function applyStrokeStyle(obj,spec){
+if(Array.isArray(spec.strokeDashArray)) obj.strokeDashArray=spec.strokeDashArray.slice();
+if(spec.strokeLineCap!==undefined) obj.strokeLineCap=spec.strokeLineCap;
+if(spec.strokeLineJoin!==undefined) obj.strokeLineJoin=spec.strokeLineJoin;
+if(spec.rx!==undefined) obj.rx=spec.rx;
+if(spec.ry!==undefined) obj.ry=spec.ry;
+return obj;
+}
+
 function createRectLayer(spec){
 const shift=strokeShift(spec);
-return new fabric.Rect({
+return applyStrokeStyle(new fabric.Rect({
 left:numOr(spec.left,0)-shift,
 top:numOr(spec.top,0)-shift,
 width:numOr(spec.width,100),
@@ -295,43 +309,59 @@ height:numOr(spec.height,100),
 fill:spec.fill||'transparent',
 stroke:spec.stroke,
 strokeWidth:numOr(spec.strokeWidth,0)
-});
+}),spec);
 }
 
 function createPolygonLayer(spec){
 const points=Array.isArray(spec.points)?spec.points:[];
 const shift=strokeShift(spec);
-return new fabric.Polygon(points,{
+return applyStrokeStyle(new fabric.Polygon(points,{
 left:numOr(spec.left,0)-shift,
 top:numOr(spec.top,0)-shift,
 fill:spec.fill||'transparent',
 stroke:spec.stroke,
 strokeWidth:numOr(spec.strokeWidth,0)
-});
+}),spec);
 }
 
 function createPathLayer(spec){
 const shift=strokeShift(spec);
-return new fabric.Path(spec.d||'M 0 0',{
+return applyStrokeStyle(new fabric.Path(spec.d||'M 0 0',{
 left:numOr(spec.left,0)-shift,
 top:numOr(spec.top,0)-shift,
 fill:spec.fill||'transparent',
 stroke:spec.stroke,
 strokeWidth:numOr(spec.strokeWidth,0)
-});
+}),spec);
 }
 
-function createTextboxLayer(spec){
-const opts={
-left:numOr(spec.left,0),
-top:numOr(spec.top,0),
-fontSize:numOr(spec.fontSize,16)
-};
-if(spec.width!==undefined) opts.width=spec.width;
+// テキスト装飾系(太字/斜体/下線類/輪郭/文字間隔/背景色)をopts/objへ反映する。
+// 保存側plSerializeTextの出力と対になる。strokeWidthは保存時にページ空間化済み。
+function applyTextStyle(opts,spec){
 if(spec.fontFamily) opts.fontFamily=spec.fontFamily;
 if(spec.fill) opts.fill=spec.fill;
 if(spec.textAlign) opts.textAlign=spec.textAlign;
 if(spec.lineHeight!==undefined) opts.lineHeight=spec.lineHeight;
+if(spec.fontWeight!==undefined) opts.fontWeight=spec.fontWeight;
+if(spec.fontStyle!==undefined) opts.fontStyle=spec.fontStyle;
+if(spec.underline!==undefined) opts.underline=spec.underline;
+if(spec.linethrough!==undefined) opts.linethrough=spec.linethrough;
+if(spec.overline!==undefined) opts.overline=spec.overline;
+if(spec.backgroundColor!==undefined) opts.backgroundColor=spec.backgroundColor;
+if(spec.textBackgroundColor!==undefined) opts.textBackgroundColor=spec.textBackgroundColor;
+if(spec.charSpacing!==undefined) opts.charSpacing=spec.charSpacing;
+if(spec.stroke!==undefined) opts.stroke=spec.stroke;
+if(spec.strokeWidth!==undefined) opts.strokeWidth=spec.strokeWidth;
+return opts;
+}
+
+function createTextboxLayer(spec){
+const opts=applyTextStyle({
+left:numOr(spec.left,0),
+top:numOr(spec.top,0),
+fontSize:numOr(spec.fontSize,16)
+},spec);
+if(spec.width!==undefined) opts.width=spec.width;
 return new fabric.Textbox(spec.text||'',opts);
 }
 
@@ -357,17 +387,17 @@ return new fabric.VerticalTextbox(spec.text||'',opts);
 // 縦列の折返し長になるので、領域の高さ(無ければ幅で近似)を渡す。
 const areaW=numOr(spec.width,0);
 const colLen=numOr(spec.height,areaW);
-const opts={
+const opts=applyTextStyle({
 left:numOr(spec.left,0)+areaW/2,
 top:numOr(spec.top,0),
 fontSize:numOr(spec.fontSize,16),
 originX:'center',
 originY:'top',
 textAlign:'center'
-};
+},spec);
+// 縦書きは領域中央寄せが既定。specにtextAlignが無ければcenterを維持。
+if(spec.textAlign===undefined) opts.textAlign='center';
 if(colLen) opts.height=colLen;
-if(spec.fontFamily) opts.fontFamily=spec.fontFamily;
-if(spec.fill) opts.fill=spec.fill;
 return new fabric.VerticalTextbox(spec.text||'',opts);
 }
 folderPickerLogger.warn('fabric.VerticalTextbox not available; vertical-textbox is unsupported',spec);
@@ -555,6 +585,12 @@ copyProjectLoaderProp(spec,obj,'angle');
 copyProjectLoaderProp(spec,obj,'opacity');
 copyProjectLoaderProp(spec,obj,'visible');
 copyProjectLoaderProp(spec,obj,'selectable');
+// 反転・スキューは初期値(false/0)以外のときのみ出力する。flipは真偽、skewは
+// 角度(度)なのでページ空間倍率Fの影響を受けない。
+if(obj.flipX) spec.flipX=true;
+if(obj.flipY) spec.flipY=true;
+if(obj.skewX) spec.skewX=obj.skewX;
+if(obj.skewY) spec.skewY=obj.skewY;
 return spec;
 }
 
@@ -587,6 +623,7 @@ spec.height=numOr(obj.height,0)*scaleY*F;
 copyProjectLoaderProp(spec,obj,'fill');
 copyProjectLoaderProp(spec,obj,'stroke');
 spec.strokeWidth=numOr(obj.strokeWidth,0)*F;
+plSerializeStrokeStyle(spec,obj,F);
 if(type==='polygon'){
 // pointsは形状ローカル座標(obj.scaleXで拡縮される)。読込側はpointsをscale=1で
 // 使うため、scaleXとFを畳んでページ空間の実寸へする(F だけだと scaleX 分はみ出す)。
@@ -634,6 +671,19 @@ spec.height=ah*F;
 return spec;
 }
 
+// 線の種類(破線/点線)・線端形状・角丸をシリアライズ。strokeDashArrayの各要素は
+// strokeWidth同様にページ空間化(×F)する。rx/ryは寸法なのでwidth/height同様にscaleを
+// 畳み込む(×scaleX×F / ×scaleY×F)。
+function plSerializeStrokeStyle(spec,obj,F){
+if(Array.isArray(obj.strokeDashArray)&&obj.strokeDashArray.length){
+spec.strokeDashArray=obj.strokeDashArray.map(n=>numOr(n,0)*F);
+}
+copyProjectLoaderProp(spec,obj,'strokeLineCap');
+copyProjectLoaderProp(spec,obj,'strokeLineJoin');
+if(obj.rx) spec.rx=numOr(obj.rx,0)*numOr(obj.scaleX,1)*F;
+if(obj.ry) spec.ry=numOr(obj.ry,0)*numOr(obj.scaleY,1)*F;
+}
+
 // loose な path/rect/polygon(非パネル)。freehand吹き出し等はcustomType/guidsを保持。
 function plSerializeShape(obj,F){
 const type=normalizeProjectLoaderType(obj);
@@ -644,6 +694,7 @@ spec.height=numOr(obj.height,0)*scaleY*F;
 copyProjectLoaderProp(spec,obj,'fill');
 copyProjectLoaderProp(spec,obj,'stroke');
 spec.strokeWidth=numOr(obj.strokeWidth,0)*F;
+plSerializeStrokeStyle(spec,obj,F);
 if(type==='polygon'){
 spec.points=plScalePoints(obj,F);
 }else if(type==='path'){
@@ -667,6 +718,22 @@ copyProjectLoaderProp(spec,obj,'fontFamily');
 copyProjectLoaderProp(spec,obj,'fill');
 copyProjectLoaderProp(spec,obj,'textAlign');
 copyProjectLoaderProp(spec,obj,'lineHeight');
+// 装飾系スカラー。fontWeight/fontStyle/各種下線/背景色は寸法でないため換算不要。
+copyProjectLoaderProp(spec,obj,'fontWeight');
+copyProjectLoaderProp(spec,obj,'fontStyle');
+copyProjectLoaderProp(spec,obj,'underline');
+copyProjectLoaderProp(spec,obj,'linethrough');
+copyProjectLoaderProp(spec,obj,'overline');
+copyProjectLoaderProp(spec,obj,'backgroundColor');
+copyProjectLoaderProp(spec,obj,'textBackgroundColor');
+// charSpacingはfabricでは1/1000em(fontSize比)の相対値なのでscale非依存。
+copyProjectLoaderProp(spec,obj,'charSpacing');
+// テキスト輪郭(ネオン含む)。strokeWidthはオブジェクトscaleで拡縮されるため
+// fontSize同様に×scaleX×Fで畳み込む。
+copyProjectLoaderProp(spec,obj,'stroke');
+if(obj.strokeWidth!==undefined&&obj.strokeWidth!==0){
+spec.strokeWidth=numOr(obj.strokeWidth,0)*numOr(obj.scaleX,1)*F;
+}
 // fontSizeも幅/高さと同様にscaleを畳み込む(×scaleX×F)。fontSizeはresizeCanvasの
 // ウィンドウフィットで変化せずscaleXに吸収されるため、×Fだけだとフィット倍率(scaleX)
 // 分ずれ、保存→再読込のたびにfontSizeがドリフトする。アスペクト一様でscaleX==scaleY。
@@ -678,26 +745,43 @@ return spec;
 }
 
 // 吹き出し(speechBubbleSVG)を入力フォーマットの group(customType)+children[shape,text]
-// へ再合成する。グループ原点=本体シェイプの幾何左上(ページ空間)、子はローカル座標。
+// へ再合成する。シェイプとテキストは「別々に移動できる対等な子」なので、グループ原点は
+// シェイプではなく shape+text を囲む安定アンカー(両者の左上の最小)に置き、shape も text も
+// そのアンカー基準の独立した相対座標で出力する(従来の shape=0,0 固定はやめる)。
 function plSerializeBubbleGroup(shape,F,guidMap){
 const type=normalizeProjectLoaderType(shape);
 const sw=numOr(shape.strokeWidth,0)*F;
-const gx=numOr(shape.left,0)*F+sw/2;
-const gy=numOr(shape.top,0)*F+sw/2;
+// シェイプ幾何左上(ページ空間)。strokeShiftぶん(sw/2)を足して角に揃える。
+const shapeX=numOr(shape.left,0)*F+sw/2;
+const shapeY=numOr(shape.top,0)*F+sw/2;
+// テキスト子(guidsの中からテキストを探す)。先にシリアライズして絶対座標を得る。
+let text=null;
+(shape.guids||[]).forEach(g=>{
+const c=guidMap.get(g);
+if(c&&isText(c)&&plIsSerializable(c)&&!text) text=c;
+});
+const textSpec=text?plSerializeText(text,F):null; // 絶対(ページ空間)left/top
+// アンカー = shape と text を囲む左上。textが無ければシェイプ角。
+let ax=shapeX,ay=shapeY;
+if(textSpec){
+ax=Math.min(ax,numOr(textSpec.left,shapeX));
+ay=Math.min(ay,numOr(textSpec.top,shapeY));
+}
 const group={
 guid:shape.guid||generateGUID(),
 type:'group',
 customType:'speechBubbleSVG',
-left:gx,
-top:gy
+left:ax,
+top:ay
 };
 copyProjectLoaderProp(group,shape,'name');
-// 本体シェイプ(グループ原点=ローカル0,0)
+// 本体シェイプ(アンカー基準の独立相対座標)。d/pointsはシェイプ自身のローカル原点
+// 基準のままで、配置は left/top が担う。
 const shapeChild={
 guid:(shape.guid||generateGUID())+'-shape',
 type:type,
-left:0,
-top:0
+left:shapeX-ax,
+top:shapeY-ay
 };
 if(type==='path'){
 shapeChild.d=plScalePathD(shape,F);
@@ -710,19 +794,13 @@ shapeChild.height=numOr(shape.height,0)*numOr(shape.scaleY,1)*F;
 copyProjectLoaderProp(shapeChild,shape,'fill');
 copyProjectLoaderProp(shapeChild,shape,'stroke');
 shapeChild.strokeWidth=sw;
+plSerializeStrokeStyle(shapeChild,shape,F);
 const children=[shapeChild];
 const guids=[shapeChild.guid];
-// テキスト子(guidsの中からテキストを探す)
-let text=null;
-(shape.guids||[]).forEach(g=>{
-const c=guidMap.get(g);
-if(c&&isText(c)&&plIsSerializable(c)&&!text) text=c;
-});
-if(text){
-const textSpec=plSerializeText(text,F);
-// plSerializeTextが返す絶対(ページ空間)left/topをグループローカルへ
-textSpec.left=numOr(textSpec.left,0)-gx;
-textSpec.top=numOr(textSpec.top,0)-gy;
+if(text&&textSpec){
+// plSerializeTextが返す絶対(ページ空間)left/topをアンカー基準の相対へ。
+textSpec.left=numOr(textSpec.left,0)-ax;
+textSpec.top=numOr(textSpec.top,0)-ay;
 children.push(textSpec);
 guids.push(text.guid||textSpec.guid);
 }
