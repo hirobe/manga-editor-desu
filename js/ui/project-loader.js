@@ -648,26 +648,37 @@ if(!Array.isArray(obj.path)) return obj.d||'';
 return obj.path.map(cmd=>cmd.map((t,i)=>(i===0||typeof t!=='number')?t:+(t*s).toFixed(3)).join(' ')).join(' ');
 }
 
-// 画像。コマ領域(clipPath)からleft/top/width/heightを算出し、scaleX/clipPath/
-// preserveTransformは出さない。ローダがcover-fitとclipPathを再生成する。
+// 画像。コマ内で手動移動/ズームした状態を往復で保持するため、画像の実変換
+// (実位置left/top・scaleX/scaleY・コマ窓clipPath)を preserveTransform 付きで保存する。
+// ローダはこの場合 cover-fit せず実変換を復元する。コマ外の loose 画像は
+// boundingRect から left/top/width/height を出す(従来通り)。
 function plSerializeImage(obj,F){
 const spec=plSerializeBase(obj,F);
 spec.src=obj.projectLoaderSrc||extractProjectLoaderImageSrc(obj);
-let ax,ay,aw,ah;
 const cp=obj.clipPath;
 if(cp&&numOr(cp.width,0)&&numOr(cp.height,0)){
-ax=numOr(cp.left,0);
-ay=numOr(cp.top,0);
-aw=numOr(cp.width,0)*numOr(cp.scaleX,1);
-ah=numOr(cp.height,0)*numOr(cp.scaleY,1);
+spec.preserveTransform=true;
+// plSerializeBaseがleft/top=画像の実位置(×F)を設定済み。スケールも×Fで
+// ページ空間化する(ローダはscaleXをそのまま使う)。
+spec.scaleX=numOr(obj.scaleX,1)*F;
+spec.scaleY=numOr(obj.scaleY,1)*F;
+// 表示サイズ(レンダラ用。ローダはpreserveTransform時これを使わない)。
+spec.width=numOr(obj.width,0)*numOr(obj.scaleX,1)*F;
+spec.height=numOr(obj.height,0)*numOr(obj.scaleY,1)*F;
+// コマ窓(絶対配置clipPath)をページ空間で。
+spec.clipPath={
+left:numOr(cp.left,0)*F,
+top:numOr(cp.top,0)*F,
+width:numOr(cp.width,0)*numOr(cp.scaleX,1)*F,
+height:numOr(cp.height,0)*numOr(cp.scaleY,1)*F
+};
 }else{
 const br=obj.getBoundingRect(true,true);
-ax=br.left;ay=br.top;aw=br.width;ah=br.height;
+spec.left=br.left*F;
+spec.top=br.top*F;
+spec.width=br.width*F;
+spec.height=br.height*F;
 }
-spec.left=ax*F;
-spec.top=ay*F;
-spec.width=aw*F;
-spec.height=ah*F;
 return spec;
 }
 

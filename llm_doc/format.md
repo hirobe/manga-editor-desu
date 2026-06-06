@@ -385,7 +385,7 @@ my-project/
 1. **実ページ空間へ戻す**: 正規化係数 `F = initialCanvasWidth / canvas.getWidth()` を全座標・寸法に掛け、ウィンドウフィット分を打ち消す（縦横一様）。`initialCanvasWidth/Height`（`js/canvas-manager.js`、ページ読込時の `resizeCanvasByNum` で設定、フィット用 `resizeCanvas` では不変）が基準。これにより `pageSize` が窓サイズ依存でドリフトしない。
 2. **scale=1 化**: 各オブジェクトの `scaleX/scaleY` を `width`/`height`/`points`/`path の d`/`fontSize`/`clipPath` へ畳み込む。出力には **`scaleX`/`scaleY`/`originX`/`originY`/`preserveTransform`/明示 `clipPath` を含めない**（入力スキーマ通り scale=1 前提）。
 3. **階層を復元**: フラットなキャンバスを `guids`（親→子）を正に階層化する（`relatedPoly` は `commonProperties` 外で Undo/Redo 時に失われるため使わない）。コマ（`isPanel`）の子（画像・吹き出し）を `children` にネストし、吹き出し本体（`customType=speechBubbleSVG`）とそのテキストを `type:group` に再合成する。
-4. **画像はコマ領域(area)のみ**: 画像の `clipPath`（コマ領域）から `left/top/width/height` を算出して出力。スケール/`clipPath` は再読込時に `createImageLayer` の cover-fit 分岐が再生成する。
+4. **画像は実変換を保存**: コマ配下の画像は手動移動/ズームを保持するため、実位置 `left/top`・`scaleX/scaleY`・コマ窓 `clipPath` を `preserveTransform:true` 付きで出力する。ローダはこの場合 cover-fit せず実変換を復元する。コマ外の loose 画像は boundingRect から `left/top/width/height` を出す。
 5. **strokeShift 戻し**: `left/top` は幾何角に戻す（出力時に `strokeWidth/2` を加算）。`strokeWidth` も `×F` でページ空間化する。
 
 ### トップレベル出力
@@ -407,7 +407,7 @@ my-project/
 |---|---|---|
 | コマ rect (`isPanel`) | 共通 + `isPanel:true`, `width`, `height`, `fill`, `stroke`, `strokeWidth`, `guids`, `children`, （あれば)`strokeDashArray`/`strokeLineCap`/`rx`/`ry` | `width/height = obj.width/height × scaleX/Y × F`。子は `relatedPoly=コマguid` 付き |
 | コマ polygon (`isPanel`) | 上記 + `points` | `points` は `× scaleX × F`（scale 畳み込み） |
-| 画像 image | 共通 + `src`, `width`, `height` | `left/top/width/height` はコマ領域（`clipPath` から算出）。`scaleX/clipPath/preserveTransform` は**無し** |
+| 画像 image | 共通 + `src`, `preserveTransform:true`, `left`, `top`, `width`, `height`, `scaleX`, `scaleY`, `clipPath{left,top,width,height}` | コマ配下は画像の実変換を保存(手動移動/ズーム保持)。`left/top`=画像実位置、`width/height`=表示サイズ、`clipPath`=コマ窓。loose 画像は `preserveTransform` 無しで boundingRect を出力 |
 | 吹き出し（→ group） | `type:"group"`, `customType:"speechBubbleSVG"`, `left`, `top`, `name`, `guids:[shape, text]`, `children:[shape, textbox]` | グループ原点 = shape+text を囲む安定アンカー(両者左上の最小)。shape/text とも**アンカー基準の独立相対座標**。shape child は `<guid>-shape` |
 | └ 本体 shape | `type`(path/polygon/rect), `left`/`top`(アンカー基準の相対), geometry(`d`/`points`/`width,height`), `fill`, `stroke`, `strokeWidth`, （あれば)`strokeDashArray`/`strokeLineCap` | `left/top` は 0,0 固定ではない。`d`/`points` はシェイプ自身のローカル原点基準で scale 畳み込み済み |
 | └ テキスト | テキスト出力（下記）をアンカー基準の相対座標化 | |
@@ -421,7 +421,7 @@ my-project/
 ### 後方互換・既知の制限
 
 - `pageSize` はエディタ論理ページ寸法。エディタはロード時にページをコンテナへ縮小するため、元 `_page.json` の authoring 寸法（例 800×1200）より小さい場合がある（比率は同一・往復で安定）。
-- 入力スキーマは画像を「コマ領域 + cover-fit」でしか表せないため、コマ内で画像を手動移動/ズームした状態は再読込で中央 cover-fit に戻る（入力フォーマット自体の表現限界）。
+- コマ内で画像を手動移動/ズームした状態は `preserveTransform` 形式で保存・復元される(往復で保持)。外部生成の `_page.json` で `preserveTransform` を省略した画像は従来通りコマ領域に cover-fit される。
 - 吹き出しテキスト幅に `fabric.Textbox.width` 由来の微小な往復差（数%）が生じうる。
 - freehand 吹き出しは group 化せず、本体 path を top-level、テキスト/矩形を loose 出力する（読込側に freehand 用の group 展開が無いため）。詳細状態は lz4 プロジェクト側が真とする。
 - **吹き出しの旧フォーマット（shape を `0,0` 固定とする形式）は読み込み非対応**。安定アンカー方式へ移行するには `project_template/.scripts/convert_bubble_format.py` で変換する（絶対位置保持・冪等・`--dry-run` 可）。
