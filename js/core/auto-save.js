@@ -115,6 +115,13 @@ if(enabled)start();
 
 async function checkRecovery(){
 try{
+// URL(?project=)からプロジェクトを自動読込みする場合、その内容で上書きされるため
+// 自動保存(キャッシュ)は復元せず自動削除する。復元/破棄を尋ねない(issue #75)。
+var autoLoadProject=new URLSearchParams(location.search).get('project');
+if(autoLoadProject){
+await clearAutoSave();
+return;
+}
 var metadata=await store.getItem('metadata');
 if(!metadata)return;
 var pages=await store.getItem('pages');

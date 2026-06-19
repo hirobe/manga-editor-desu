@@ -380,6 +380,10 @@ async function chengeCanvasByGuid(guid) {
 const projectData=btmProjectsMap.get(guid);
 try {
 await loadLz4BlobProjectFile(projectData.blob,guid);
+// ページは保存時の寸法(取り込みページは生ページ寸法)で復元されるため、読込み完了後に
+// 現在のウィンドウへフィットさせて拡大率を正す。loadFromJSONの完了を待ってから行う
+// 必要があるため、loadLz4BlobProjectFileのawait後に実行する(issue #76)。
+forcedAdjustCanvasSize();
 } catch (error) {
 uiLogger.error("Error loading ZIP:",error);
 throw error;

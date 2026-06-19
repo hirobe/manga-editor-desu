@@ -76,6 +76,12 @@ if(loaded===0){
 createToastError(plText('projectLoaderError'),[]);
 return;
 }
+// 取り込み中は_projectLoaderBuildingでリサイズが抑止され、各ページは生ページ寸法の
+// まま表示されている。先頭ページを再表示してウィンドウに合わせ拡大率を正す(issue #76)。
+const firstGuid=btmGetFirstGuidByIndex();
+if(firstGuid){
+await chengeCanvasByGuid(firstGuid);
+}
 createToast(plText('projectLoaderLoaded'),[`${loaded} / ${sorted.length}`,folderDisplayPath||folderPath]);
 }
 
