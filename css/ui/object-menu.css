@@ -187,6 +187,35 @@ font-size: 14px;
 margin: 0;
 }
 
+.project-image-replace-gen {
+display: flex;
+align-items: center;
+gap: 8px;
+margin-left: auto;
+margin-right: 12px;
+font-size: 13px;
+}
+
+.project-image-replace-gen label {
+display: flex;
+align-items: center;
+gap: 4px;
+}
+
+.project-image-replace-generate {
+cursor: pointer;
+padding: 4px 10px;
+border: 1px solid var(--fjm-border-color);
+border-radius: 4px;
+background: transparent;
+color: inherit;
+}
+
+.project-image-replace-generate:disabled {
+opacity: 0.5;
+cursor: default;
+}
+
 .project-image-replace-close {
 border: none;
 background: transparent;

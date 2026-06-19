@@ -53,6 +53,11 @@ manga-editor-desu/
 - プロジェクトを開く（フォルダ選択 / URL自動オープン）と、`history.replaceState` で URL を `?project=<パス>` に同期する（`fpSyncProjectUrl`。file:// では失敗しうるため try/catch で保護）。
 - Links ドロップダウンの `#openRunnerLink`（`LLM Runner`）は、現在のプロジェクト付きで runner を開く（`/llm/?project=<パス>`、`fpUpdateRunnerLink` が href を更新）。runner 側（`/llm/`）にも逆向きのエディタリンク（`/front/?project=<パス>`）がある。
 
+## 画像選択UIからの画像生成（canvas-object-menu.js）
+- 画像オブジェクト右クリック →「入替え」で開く候補画像選択モーダル（`openProjectImageReplacePicker`）に、生成枚数 `<select>`（既定4）と「画像生成」ボタンを追加。
+- ボタンは対象パネルのフォルダ（`dirPath` の末尾 `pXXX_panelYY`）とプロジェクト（`dirPath` の `/pages/` より前）を取り出し、runner へ `POST /llm/api/projects/gen-panel?project=<パス>`（body: `{panel, count}`）を投げる。runner 側が `gen_coma_image.py --only pXXX_panelYY --repeat-per-folder <count>` を非同期キューで実行する。
+- 生成完了後はモーダルを開き直すと候補PNGが増えている（自動再読込はしない）。
+
 ## 主要グローバル変数
 | 変数 | 説明 |
 |------|------|

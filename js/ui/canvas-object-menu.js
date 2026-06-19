@@ -705,6 +705,17 @@ overlay.innerHTML=`
 <div class="project-image-replace-modal" role="dialog" aria-modal="true">
 <div class="project-image-replace-header">
 <h3>${getText('projectImageReplaceTitle')}</h3>
+<span class="project-image-replace-gen">
+<label>${getText('projectImageGenerateCount')}
+<select class="project-image-replace-count">
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="4" selected>4</option>
+<option value="6">6</option>
+<option value="8">8</option>
+</select></label>
+<button type="button" class="project-image-replace-generate">${getText('projectImageGenerate')}</button>
+</span>
 <button type="button" class="project-image-replace-close" aria-label="Close">&times;</button>
 </div>
 <div class="project-image-replace-list">
@@ -724,6 +735,37 @@ overlay.addEventListener('click',(e)=>{
 if(e.target===overlay) close();
 });
 overlay.querySelector('.project-image-replace-close').addEventListener('click',close);
+
+// 画像生成ボタン: 対象パネル(pXXX_panelYY)に対し、指定枚数で画像生成シェルを
+// runner(/llm/) の非同期キューに投入する。完了後はこのモーダルを開き直すと候補が増える。
+const genBtn=overlay.querySelector('.project-image-replace-generate');
+if(genBtn){
+genBtn.addEventListener('click',async ()=>{
+const panel=dirPath.split('/').pop();
+const project=dirPath.split('/pages/')[0];
+if(!/^p\d+_panel\d+$/.test(panel)||project===dirPath){
+createToastError(getText('projectImageGenerate'),[getText('projectImageReplaceNoPath')]);
+return;
+}
+const sel=overlay.querySelector('.project-image-replace-count');
+const count=parseInt(sel&&sel.value,10)||4;
+genBtn.disabled=true;
+try{
+const res=await fetch(`/llm/api/projects/gen-panel?project=${encodeURIComponent(project)}`,{
+method:'POST',
+headers:{'Content-Type':'application/json'},
+body:JSON.stringify({panel:panel,count:count})
+});
+if(!res.ok) throw new Error('gen-panel http '+res.status);
+createToast(getText('projectImageGenerateQueued'),[`${panel} ×${count}`]);
+}catch(err){
+uiLogger.error('gen panel failed',err);
+createToastError(getText('projectImageGenerate'),[err.message||'']);
+}finally{
+genBtn.disabled=false;
+}
+});
+}
 
 const list=overlay.querySelector('.project-image-replace-list');
 try{
