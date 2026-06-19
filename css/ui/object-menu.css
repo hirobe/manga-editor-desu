@@ -172,6 +172,37 @@ box-shadow: 0 8px 32px rgba(0,0,0,0.4);
 display: flex;
 flex-direction: column;
 color: var(--fjm-button-color);
+position: relative;
+}
+
+/* 生成中インジケーター（隅に小さく表示。操作は妨げない） */
+.project-image-replace-spinner {
+position: absolute;
+right: 14px;
+bottom: 12px;
+display: flex;
+align-items: center;
+gap: 8px;
+padding: 6px 12px;
+border-radius: 999px;
+background: rgba(0,0,0,0.6);
+color: #fff;
+font-size: 12px;
+z-index: 1;
+pointer-events: none; /* 下のリスト・閉じるボタンなどの操作を邪魔しない */
+}
+
+.project-image-replace-spinner-circle {
+width: 16px;
+height: 16px;
+border: 2px solid rgba(255,255,255,0.3);
+border-top-color: #fff;
+border-radius: 50%;
+animation: project-image-replace-spin 0.9s linear infinite;
+}
+
+@keyframes project-image-replace-spin {
+to { transform: rotate(360deg); }
 }
 
 .project-image-replace-header {
@@ -185,6 +216,35 @@ border-bottom: 1px solid var(--fjm-border-color);
 .project-image-replace-header h3 {
 font-size: 14px;
 margin: 0;
+}
+
+.project-image-replace-gen {
+display: flex;
+align-items: center;
+gap: 8px;
+margin-left: auto;
+margin-right: 12px;
+font-size: 13px;
+}
+
+.project-image-replace-gen label {
+display: flex;
+align-items: center;
+gap: 4px;
+}
+
+.project-image-replace-generate {
+cursor: pointer;
+padding: 4px 10px;
+border: 1px solid var(--fjm-border-color);
+border-radius: 4px;
+background: transparent;
+color: inherit;
+}
+
+.project-image-replace-generate:disabled {
+opacity: 0.5;
+cursor: default;
 }
 
 .project-image-replace-close {
