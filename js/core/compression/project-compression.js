@@ -109,7 +109,7 @@ stateStack=jsonResults.filter(data=>data!==undefined);
 
 currentStateIndex=stateStack.length-1;
 resizeCanvasByNum(canvasInfo.width,canvasInfo.height);
-lastRedo(guid);
+await lastRedo(guid);
 
 if(guid){
 setCanvasGUID(guid);
@@ -352,7 +352,7 @@ stateStack=jsonResults.filter(data=>data!==undefined);
 
 currentStateIndex=stateStack.length-1;
 resizeCanvasByNum(canvasInfo.width,canvasInfo.height);
-lastRedo(guid);
+await lastRedo(guid);
 
 if(guid){
 setCanvasGUID(guid);

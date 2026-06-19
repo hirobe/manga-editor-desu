@@ -250,7 +250,10 @@ clearJSTSGeometry();
 }
 }
 
+// loadFromJSONは非同期(画像のenlivenを待つ)なので、呼び出し側が読込み完了後に
+// 拡大率調整(forcedAdjustCanvasSize)を行えるよう、完了で解決するPromiseを返す。
 function lastRedo(guid=null) {
+return new Promise(function(resolve){
 changeDoNotSaveHistory();
 currentStateIndex=stateStack.length-1;
 
@@ -267,8 +270,10 @@ updateLayerPanel();
 resetEventHandlers();
 customSpeechBubbleAllRelocation();
 changeDoSaveHistory();
+resolve();
 });
 clearJSTSGeometry();
+});
 }
 
 function reSetSpeechBubbleText(){
