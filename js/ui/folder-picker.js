@@ -15,6 +15,37 @@ return folderPickerStore.getItem(FOLDER_PICKER_KEY);
 }
 };
 
+// 現在開いているプロジェクトの HOME 相対パスを URL(?project=) に反映する。
+// file:// では replaceState が SecurityError になりうるため try/catch で保護する。
+function fpSyncProjectUrl(path){
+try{
+const url=path?location.pathname+'?project='+encodeURIComponent(path):location.pathname;
+history.replaceState(null,'',url);
+}catch(err){
+folderPickerLogger.warn('failed to sync project url',err);
+}
+}
+
+// runner(/llm/) へのリンク href を、現在のプロジェクト付きに更新する。
+function fpUpdateRunnerLink(path){
+const link=document.getElementById('openRunnerLink');
+if(!link) return;
+link.href='/llm/'+(path?'?project='+encodeURIComponent(path):'');
+}
+
+// プロジェクトを開いたときの共通処理: 永続化・URL反映・runnerリンク更新。
+async function fpSetCurrentProject(path,displayPath){
+if(folderPickerStore){
+try{
+await folderPickerStore.setItem(FOLDER_PICKER_KEY,{path:path,displayPath:displayPath,timestamp:Date.now()});
+}catch(err){
+folderPickerLogger.error('failed to persist selection',err);
+}
+}
+fpSyncProjectUrl(path);
+fpUpdateRunnerLink(path);
+}
+
 function fpText(key){
 if(typeof i18next!=='undefined'&&i18next.isInitialized){
 return i18next.t(key);
@@ -83,14 +114,7 @@ overlay.querySelector('.folder-picker-close').addEventListener('click',close);
 overlay.querySelector('.folder-picker-cancel').addEventListener('click',close);
 
 overlay.querySelector('.folder-picker-select').addEventListener('click',async ()=>{
-const payload={path:currentPath,displayPath:currentDisplayPath,timestamp:Date.now()};
-if(folderPickerStore){
-try{
-await folderPickerStore.setItem(FOLDER_PICKER_KEY,payload);
-}catch(err){
-folderPickerLogger.error('failed to persist selection',err);
-}
-}
+await fpSetCurrentProject(currentPath,currentDisplayPath);
 close();
 if(window.ProjectLoader&&typeof window.ProjectLoader.loadFromFolder==='function'){
 await window.ProjectLoader.loadFromFolder(currentPath,currentDisplayPath);
@@ -156,11 +180,31 @@ list.appendChild(errorEl);
 navigate(currentPath);
 }
 
-document.addEventListener('DOMContentLoaded',()=>{
+document.addEventListener('DOMContentLoaded',async ()=>{
 const btn=document.getElementById('projectFolderOpen');
-if(!btn) return;
+if(btn){
 btn.addEventListener('click',(e)=>{
 e.preventDefault();
 openFolderPicker();
 });
+}
+// runner リンクの href を、URL の ?project= か前回開いたプロジェクトで初期化する。
+const urlProject=new URLSearchParams(location.search).get('project');
+if(urlProject){
+fpUpdateRunnerLink(urlProject);
+}else{
+const saved=await window.FolderPicker.getCurrent();
+fpUpdateRunnerLink(saved&&saved.path?saved.path:'');
+}
+});
+
+// URL に ?project=<HOME相対パス> があれば、そのプロジェクトを自動で開く。
+// キャンバス等の初期化後に動かすため DOMContentLoaded ではなく load で実行する。
+window.addEventListener('load',async ()=>{
+const urlProject=new URLSearchParams(location.search).get('project');
+if(!urlProject) return;
+if(window.ProjectLoader&&typeof window.ProjectLoader.loadFromFolder==='function'){
+await fpSetCurrentProject(urlProject,'');
+await window.ProjectLoader.loadFromFolder(urlProject,urlProject);
+}
 });

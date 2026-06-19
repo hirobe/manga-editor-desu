@@ -48,6 +48,11 @@ manga-editor-desu/
   - `GET /api/file?path=<HOME相対>` — ファイル本文（FileResponse）
 - launchd 経由の常駐起動は `dev/devserver.sh install`
 
+## URL パラメータ / runner との相互リンク（folder-picker.js）
+- `?project=<HOME相対パス>` 付きで開くと、`window` の `load` で該当プロジェクトを自動オープンする（canvas 初期化後に動かすため `load` で実行）。
+- プロジェクトを開く（フォルダ選択 / URL自動オープン）と、`history.replaceState` で URL を `?project=<パス>` に同期する（`fpSyncProjectUrl`。file:// では失敗しうるため try/catch で保護）。
+- Links ドロップダウンの `#openRunnerLink`（`LLM Runner`）は、現在のプロジェクト付きで runner を開く（`/llm/?project=<パス>`、`fpUpdateRunnerLink` が href を更新）。runner 側（`/llm/`）にも逆向きのエディタリンク（`/front/?project=<パス>`）がある。
+
 ## 主要グローバル変数
 | 変数 | 説明 |
 |------|------|
