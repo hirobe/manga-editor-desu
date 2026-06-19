@@ -725,7 +725,9 @@ overlay.innerHTML=`
 `;
 document.body.appendChild(overlay);
 
+let closed=false;
 const close=()=>{
+closed=true;
 overlay.remove();
 document.removeEventListener('keydown',onKey);
 };
@@ -749,6 +751,7 @@ return;
 }
 const sel=overlay.querySelector('.project-image-replace-count');
 const count=parseInt(sel&&sel.value,10)||4;
+const genLabel=genBtn.textContent;
 genBtn.disabled=true;
 try{
 const res=await fetch(`/llm/api/projects/gen-panel?project=${encodeURIComponent(project)}`,{
@@ -757,17 +760,53 @@ headers:{'Content-Type':'application/json'},
 body:JSON.stringify({panel:panel,count:count})
 });
 if(!res.ok) throw new Error('gen-panel http '+res.status);
+const data=await res.json().catch(()=>({}));
 createToast(getText('projectImageGenerateQueued'),[`${panel} ×${count}`]);
+if(data&&data.task_id){
+// 生成完了をポーリングで待ち、終わったら候補リストを自動リロードする
+genBtn.textContent=getText('projectImageGenerating');
+const status=await waitForTask(project,data.task_id);
+if(closed) return;
+if(status){
+await loadList();
+if(status==='success') createToast(getText('projectImageGenerateDone'),[panel]);
+else createToastError(getText('projectImageGenerate'),[getText('projectImageGenerateFailed')]);
+}
+}
 }catch(err){
 uiLogger.error('gen panel failed',err);
 createToastError(getText('projectImageGenerate'),[err.message||'']);
 }finally{
-genBtn.disabled=false;
+if(!closed){genBtn.disabled=false;genBtn.textContent=genLabel;}
 }
 });
 }
 
 const list=overlay.querySelector('.project-image-replace-list');
+
+// runner のタスク完了をポーリングで待つ。完了状態(success/aborted/error)を返す。
+// モーダルが閉じられた・タイムアウト(約20分)した場合は null。
+async function waitForTask(project,taskId){
+const DONE={success:1,aborted:1,error:1};
+for(let i=0;i<400;i++){
+await new Promise(r=>setTimeout(r,3000));
+if(closed) return null;
+let snap;
+try{
+const r=await fetch(`/llm/api/projects/queues?project=${encodeURIComponent(project)}`);
+if(!r.ok) continue;
+snap=await r.json();
+}catch(e){
+continue;
+}
+const t=(snap.tasks||[]).find(x=>x.task_id===taskId);
+if(t&&DONE[t.status]) return t.status;
+}
+return null;
+}
+
+// 候補PNG一覧を取得して再描画する（初期表示・生成完了後の自動リロードで共用）。
+async function loadList(){
 try{
 const entries=await fetchProjectPngList(dirPath);
 list.innerHTML='';
@@ -804,6 +843,8 @@ list.appendChild(item);
 uiLogger.error('list replacement images failed',err);
 list.innerHTML=`<div class="project-image-replace-status error">${getText('projectImageReplaceError')}</div>`;
 }
+}
+loadList();
 }
 
 async function fetchProjectPngList(dirPath){
