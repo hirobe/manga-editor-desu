@@ -721,6 +721,10 @@ overlay.innerHTML=`
 <div class="project-image-replace-list">
 <div class="project-image-replace-status">${getText('projectImageReplaceLoading')}</div>
 </div>
+<div class="project-image-replace-spinner" hidden>
+<div class="project-image-replace-spinner-circle"></div>
+<span>${getText('projectImageGenerating')}</span>
+</div>
 </div>
 `;
 document.body.appendChild(overlay);
@@ -751,6 +755,7 @@ return;
 }
 const sel=overlay.querySelector('.project-image-replace-count');
 const count=parseInt(sel&&sel.value,10)||4;
+const spinner=overlay.querySelector('.project-image-replace-spinner');
 const genLabel=genBtn.textContent;
 genBtn.disabled=true;
 try{
@@ -763,8 +768,10 @@ if(!res.ok) throw new Error('gen-panel http '+res.status);
 const data=await res.json().catch(()=>({}));
 createToast(getText('projectImageGenerateQueued'),[`${panel} ×${count}`]);
 if(data&&data.task_id){
-// 生成完了をポーリングで待ち、終わったら候補リストを自動リロードする
+// 生成完了をポーリングで待ち、終わったら候補リストを自動リロードする。
+// 待っている間はモーダル内にインジケーター（ぐるぐる）を表示する。
 genBtn.textContent=getText('projectImageGenerating');
+if(spinner) spinner.hidden=false;
 const status=await waitForTask(project,data.task_id);
 if(closed) return;
 if(status){
@@ -777,7 +784,7 @@ else createToastError(getText('projectImageGenerate'),[getText('projectImageGene
 uiLogger.error('gen panel failed',err);
 createToastError(getText('projectImageGenerate'),[err.message||'']);
 }finally{
-if(!closed){genBtn.disabled=false;genBtn.textContent=genLabel;}
+if(!closed){genBtn.disabled=false;genBtn.textContent=genLabel;if(spinner) spinner.hidden=true;}
 }
 });
 }
