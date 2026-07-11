@@ -227,6 +227,12 @@ delete this.removeSettings;
 }
 
 function updateClipPath(imageObj,fabricObj) {
+// コマからはみ出す要素(overflow・comicllm issue #378: はみ出し擬音等)は
+// コマ窓でクリップしない。projectLoaderExtrasはページJSON取り込み時に保持される。
+if (imageObj&&imageObj.projectLoaderExtras&&imageObj.projectLoaderExtras.overflow) {
+imageObj.clipPath=null;
+return;
+}
 if (fabricObj.type==='path') {
 updatePathClipPath(imageObj,fabricObj);
 return;

@@ -124,6 +124,9 @@ Manga Editor DESU のページ JSON データ形式仕様。**読み込み（外
 - `width`/`height` はコマ(配置領域)のサイズ。ローダは**元画像のアスペクト比を保ったまま**、領域を埋めるよう拡縮する(cover相当: `scale=max(width/imgW,height/imgH)`)。余白は出さず領域中央に配置する
 - 画像データは切らず、**コマを窓にして画像の見える範囲だけを表示する**(ひな形パネルと同じ。画像オブジェクト自体は無傷)。クリップは絶対配置(`absolutePositioned`)の矩形で、コマ領域に対して固定される
 - 取り込み時はローダが画像へ直接 clipPath を設定し、`addJsonAsPage` の `saveInitialState` で画像と clipPath の `initial` を同一 canvas サイズに揃える(リサイズ時のズレ防止)。再読込時は既存機構 `resetEventHandlers`→`moveSettings`→`updateClipPath`(矩形コマは `updateRectClipPath`)が clipPath を再生成する。`updateRectClipPath` は**画像のみ**を対象にし、吹き出し(コマの `guids` に含まれる)はクリップしない
+- **`preserveTransform: true` の2方言**(comicllm issue #378):
+  - エディタ産(編集保存の往復): `scaleX`/`scaleY` と明示 `clipPath{left,top,width,height}` を持つ。ローダは実変換をそのまま復元する
+  - パイプライン産(comicllm `manga_layout.py`): `scaleX`/`clipPath` が無く、`left`/`top`/`width`/`height` が**画像の実表示矩形**を表す(SVG の `preserveAspectRatio="none"` 相当)。ローダは `scaleX=width/imgW`, `scaleY=height/imgH` を導出し、`relatedPoly` のコマ形状を窓にクリップする(`overflow: true` ならクリップしない)
 
 #### パネル/コマ (矩形/多角形, `isPanel=true`)
 
@@ -354,6 +357,34 @@ my-project/
         └── bg-cafe.png
 ```
 
+## 未知キーの素通し（無損失ラウンドトリップ）
+
+ローダ/シリアライザが解釈しないキー(**未知キー**)は、取り込み時に各 fabric オブジェクトの `projectLoaderExtras` へ深いコピーで退避し、編集保存時に**そのまま出力へマージ**する(シリアライザが計算するキーが優先)。`projectLoaderExtras` は `commonProperties` 登録済みで、Undo/Redo・lz4 保存・ページ切替を越えて保持される。既知キーの一覧は `PL_KNOWN_SPEC_KEYS`(`js/ui/project-loader.js`)。
+
+これにより comicllm パイプラインのレンダラ(`manga_svg_2.py`)専用フィールドが編集往復で失われない:
+
+| キー | 対象 | 意味 |
+|---|---|---|
+| `zOrder` | panel | 浮きゴマ(inset)。>0 なら他コマの枠線より前面に一塊で描く |
+| `bleedEdges` | panel | 断ち切り。列挙した辺(`top`/`right`/`bottom`/`left`)の枠線を描かない |
+| `background_type` | panel | グラデーション背景の種別(表示は未対応・素通しのみ) |
+| `overflowClip` | image | キャラのコマ上はみ出しの延長ゾーン `{left,top,width,height}` |
+| `overflow` | image(擬音)/吹き出し group | コマ窓でクリップせず枠線より前面に描く |
+| `sourceRef` | 吹き出し group | 生成元セリフへの参照(内蔵 /editor 用) |
+
+吹き出し group の未知キーは本体シェイプの `projectLoaderExtras` に退避され、書き戻しでグループ spec へマージされる(シェイプ子 spec 自身の未知キーもグループレベルに合流する点に注意)。
+
+## レンダラ専用フィールドの表示（表示忠実化）
+
+上記の素通しキーのうち以下は、取り込み時に**表示にも反映**される(comicllm issue #378)。実装はいずれも表示専用の**ゴーストオブジェクト**(`excludeFromLayerPanel: true`。レイヤーパネル・編集保存の両方から除外)と描画順の並べ替え(`plApplyProjectRenderOrder`)で行い、ページモデル自体は変えない:
+
+- **`overflow`**: 該当要素はコマ窓でクリップせず(`updateClipPath` もスキップ)、枠線より前面(最前面側)へ並べ替える
+- **`zOrder` > 0**: 白下地ゴースト + コマ + 子 + 枠線を一塊で他コマより前面へ(zOrder 昇順)
+- **`overflowClip`**: 延長ゾーンだけを窓にした同一画像のゴーストを最前面側に描く(manga_svg_2.py の二重描画と同じ。ゾーン下端はコマ枠線幅ぶん延長)
+- **`bleedEdges`**: コマ本体の stroke を透明化し、断ち切り辺を除いた枠線パスのゴーストを子より前面に描く(書き戻し時は元の stroke 色を復元)
+
+制限: ゴーストは**ページ JSON 取り込み時に生成したまま追従しない**。コマや画像をエディタで動かしてもゴースト(延長ゾーン・断ち切り枠線・白下地)は再計算されず、保存→再読込で正しい位置に再生成される。`background_type` のグラデーション背景は表示未対応(素通しのみ)。
+
 ## 座標系 (left/top と strokeWidth)
 
 - `left`/`top` は **幾何形状の角** (SVG の `x`/`y` と同じ意味) で指定する。stroke はその輪郭線上に均等に乗る (外側に `strokeWidth/2` はみ出す) 前提
@@ -367,7 +398,7 @@ my-project/
 - **画像形式**: PNG/JPG/WebP/SVG/GIF。読み込み後は内部で WebP 変換される (`js/core/util/image-util.js:imgFile2webpFile`)
 - **フォント**: 登録済みフォント名でないと描画が破綻する場合あり。事前にフォント登録 (`js/db/user-font-repository.js`) を済ませる
 - **clipPath の動的生成**: パネル子画像で `clipPath` を省略するとローダが `relatedPoly` から生成するが、複雑形状では誤差が出る可能性
-- **fabric カスタムプロパティ**: `commonProperties` (`js/core/settings.js`) に未登録のプロパティはシリアライズ往復で失われる。新規プロパティは仕様改訂で追加
+- **fabric カスタムプロパティ**: `commonProperties` (`js/core/settings.js`) に未登録のプロパティはシリアライズ往復で失われる。新規プロパティは仕様改訂で追加。ただし**ページ JSON の未知キー**は `projectLoaderExtras` として保持・素通しされる([未知キーの素通し](#未知キーの素通し無損失ラウンドトリップ)参照)
 - **編集保存 (`pXXX_page_edit.json`)**: 詳細は [編集保存の出力仕様](#編集保存-pxxx_page_editjson-の出力仕様) を参照。出力は入力スキーマへ正規化される（`scaleX`/明示`clipPath`/`preserveTransform` は出力されない）。
 
 ## 編集保存 (`pXXX_page_edit.json`) の出力仕様

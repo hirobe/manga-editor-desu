@@ -92,6 +92,7 @@ const commonProperties=[
 ,"speechBubbleGrid","speechBubbleScale","speechBubbleViewBoxWidth","speechBubbleViewBoxHeight","speechBubbleRectX","speechBubbleRectY","speechBubbleRectWidth","speechBubbleRectHeight"
 ,"baseScaleX","baseScaleY","lastLeft","lastTop","targetObject","originalSvg"
 ,"projectLoaderSrc","projectLoaderPath","projectLoaderBasePath"
+,"projectLoaderExtras","projectLoaderBleedStroke"
 ];
 
 let jscolorOptions={
