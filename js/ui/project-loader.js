@@ -9,6 +9,50 @@ const PROJECT_LOADER_PATTERN='^p\\d+_page(?:_edit)?\\.json$';
 const projectLoaderPageFiles=new Map();
 let projectLoaderRestoring=false;
 
+// ローダ/シリアライザが解釈するキー。ここに無いキー(レンダラ専用の zOrder /
+// bleedEdges / background_type / overflowClip / overflow / sourceRef や将来の
+// 追加キー)は projectLoaderExtras としてオブジェクトに保持し、書き戻し時に
+// そのまま出力へマージする(無損失ラウンドトリップ)。
+const PL_KNOWN_SPEC_KEYS=new Set([
+'guid','type','customType','name','isPanel',
+'left','top','width','height','scaleX','scaleY','originX','originY',
+'angle','opacity','visible','selectable','flipX','flipY','skewX','skewY',
+'guids','relatedPoly','children',
+'fill','stroke','strokeWidth','strokeDashArray','strokeLineCap','strokeLineJoin','rx','ry',
+'points','d','src','clipPath','preserveTransform',
+'text','fontSize','fontFamily','textAlign','lineHeight','fontWeight','fontStyle',
+'underline','linethrough','overline','backgroundColor','textBackgroundColor','charSpacing'
+]);
+
+// spec の未知キーだけを深いコピーで抜き出す(無ければ null)。
+function plExtrasOf(spec){
+let extras=null;
+for(const key in spec){
+if(PL_KNOWN_SPEC_KEYS.has(key)) continue;
+if(!extras) extras={};
+extras[key]=spec[key];
+}
+return extras?JSON.parse(JSON.stringify(extras)):null;
+}
+
+// 未知キーをオブジェクトへ退避する。commonProperties に登録済みのため
+// Undo/Redo・lz4 保存を越えて保持され、書き戻しで plMergeExtras が出力する。
+function plCaptureExtras(obj,spec){
+const extras=plExtrasOf(spec);
+if(extras) obj.projectLoaderExtras={...(obj.projectLoaderExtras||{}),...extras};
+}
+
+// 書き戻し時に退避した未知キーを出力 spec へマージする。シリアライザが
+// 計算したキーを優先し、未知キーは欠けているものだけ補う。
+function plMergeExtras(spec,obj){
+const extras=obj&&obj.projectLoaderExtras;
+if(!extras||!spec) return spec;
+for(const key in extras){
+if(!(key in spec)) spec[key]=extras[key];
+}
+return spec;
+}
+
 window.ProjectLoader={
 loadFromFolder:loadProjectPagesFromFolder,
 syncCurrentPageEdit:syncCurrentPageEdit,
@@ -114,6 +158,8 @@ const layers=Array.isArray(pageJson.layers)?pageJson.layers:[];
 for(const layerSpec of layers){
 await addLayerWithChildren(layerSpec,pagesBasePath);
 }
+// 浮きゴマ・はみ出し要素をmanga_svg_2.pyと同じ前後関係に並べ替える。
+plApplyProjectRenderOrder();
 // 全オブジェクトの基準状態をページサイズ(scale=1)で揃えてから保存する。
 // 画像のclipPathもここでinitialが設定され、画像と同一canvasサイズで同期する。
 canvas.getObjects().forEach(obj=>saveInitialState(obj));
@@ -138,12 +184,177 @@ await addSpeechBubbleSeparate(spec,pagesBasePath);
 return;
 }
 const obj=await enlivenLayer(spec,pagesBasePath);
-if(obj) canvas.add(obj);
+if(obj){
+canvas.add(obj);
+// 浮きゴマ(zOrder>0)は前面へ出したとき下が透けないよう白下地を敷く
+// (パネルのfillはobject:addedで半透明化されるため)。comicllm issue #378。
+if(spec.isPanel) plAddFloatPanelBacking(obj,spec);
+// キャラのコマ上はみ出し(overflowClip): 延長ゾーンだけを窓にした画像の
+// 二重描画(manga_svg_2.pyと同じ方式)。表示専用で書き戻しには出さない。
+if(spec.type==='image') plAddOverflowZoneGhost(obj,spec);
+}
 if(spec.type!=='group'&&Array.isArray(spec.children)){
 for(const childSpec of spec.children){
 await addLayerWithChildren(childSpec,pagesBasePath);
 }
 }
+// 断ち切り(bleedEdges)の枠線は子(画像等)の後に加え、manga_svg_2.pyの
+// 「枠線はコマ内容より前面」に合わせる。
+if(obj&&spec.isPanel) plAddBleedBorderGhost(obj,spec);
+}
+
+function plFindCanvasObjectByGuid(guid){
+if(!guid) return null;
+return canvas.getObjects().find(o=>o&&o.guid===guid)||null;
+}
+
+// 表示専用ゴースト(白下地・断ち切り枠線・はみ出し延長ゾーン)の共通属性。
+// excludeFromLayerPanel によりレイヤーパネル表示と書き戻し(plIsSerializable)の
+// 両方から除外される。ページJSON再読込時に毎回作り直す。
+function plMarkGhost(obj,forGuid,kind,name){
+obj.excludeFromLayerPanel=true;
+obj.selectable=false;
+obj.evented=false;
+obj.name=name;
+obj.projectLoaderGhostFor=forGuid;
+obj.projectLoaderGhostKind=kind;
+return obj;
+}
+
+// 浮きゴマ(zOrder>0)の直下に敷く白下地。manga_svg_2.py の白rectと同じ。
+function plAddFloatPanelBacking(panelObj,spec){
+const extras=panelObj.projectLoaderExtras;
+const z=extras?parseInt(extras.zOrder,10)||0:0;
+if(z<=0) return;
+const backing=new fabric.Rect({
+left:numOr(spec.left,0),
+top:numOr(spec.top,0),
+width:numOr(spec.width,0),
+height:numOr(spec.height,0),
+fill:'#ffffff',
+strokeWidth:0
+});
+plMarkGhost(backing,spec.guid,'backing',(spec.name||'panel')+' (inset base)');
+canvas.add(backing);
+canvas.moveTo(backing,canvas.getObjects().indexOf(panelObj));
+}
+
+// 断ち切り(bleedEdges): ページ端まで広がった辺には枠線を描かない。コマ本体の
+// strokeは透明化し(幾何と書き戻しは不変。plSerializePanelが元色を復元する)、
+// 残りの辺だけの枠線パスを重ねる。manga_svg_2.py render_panel_border と同じ。
+function plAddBleedBorderGhost(panelObj,spec){
+const bleed=spec.bleedEdges;
+if(!Array.isArray(bleed)||!bleed.length) return;
+panelObj.projectLoaderBleedStroke=panelObj.stroke;
+panelObj.set('stroke','rgba(0,0,0,0)');
+const x=numOr(spec.left,0),y=numOr(spec.top,0);
+const w=numOr(spec.width,0),h=numOr(spec.height,0);
+const edges={
+top:[x,y,x+w,y],
+right:[x+w,y,x+w,y+h],
+bottom:[x+w,y+h,x,y+h],
+left:[x,y+h,x,y]
+};
+const segs=[],xs=[],ys=[];
+for(const name in edges){
+if(bleed.includes(name)) continue;
+const [x1,y1,x2,y2]=edges[name];
+segs.push(`M ${x1} ${y1} L ${x2} ${y2}`);
+xs.push(x1,x2);
+ys.push(y1,y2);
+}
+if(!segs.length) return; // 全辺断ち切り=枠線なし
+const sw=numOr(spec.strokeWidth,0);
+const border=new fabric.Path(segs.join(' '),{
+left:Math.min(...xs)-sw/2,
+top:Math.min(...ys)-sw/2,
+fill:'',
+stroke:spec.stroke||'rgb(0,0,0)',
+strokeWidth:sw,
+strokeLineCap:'square'
+});
+if(Array.isArray(spec.strokeDashArray)) border.strokeDashArray=spec.strokeDashArray.slice();
+plMarkGhost(border,spec.guid,'border',(spec.name||'panel')+' (bleed border)');
+canvas.add(border);
+}
+
+// キャラのコマ上はみ出し(overflowClip)。コマ窓と互いに素な延長ゾーンだけを
+// 窓にして同じ画像をもう一度描く(枠線より前面へは plApplyProjectRenderOrder が出す)。
+function plAddOverflowZoneGhost(img,spec){
+const oc=spec.overflowClip;
+if(!oc||typeof oc!=='object') return;
+const ow=numOr(oc.width,0);
+let oh=numOr(oc.height,0);
+if(!(ow>0)||!(oh>0)) return;
+// ゾーン下端(コマ上端)の枠線帯をキャラの不透明部分が覆えるよう、クリップを
+// strokeWidthぶん下へ延長する(manga_svg_2.py issue #398 と同じ)。
+const panel=plFindCanvasObjectByGuid(spec.relatedPoly);
+if(panel) oh+=numOr(panel.strokeWidth,0);
+const ghost=new fabric.Image(img.getElement(),{
+left:img.left,
+top:img.top,
+scaleX:img.scaleX,
+scaleY:img.scaleY,
+angle:img.angle,
+flipX:img.flipX,
+flipY:img.flipY,
+skewX:img.skewX,
+skewY:img.skewY,
+opacity:img.opacity,
+visible:img.visible,
+crossOrigin:'anonymous'
+});
+ghost.clipPath=new fabric.Rect({
+left:numOr(oc.left,0),
+top:numOr(oc.top,0),
+width:ow,
+height:oh,
+strokeWidth:0,
+absolutePositioned:true
+});
+plMarkGhost(ghost,spec.guid,'overflowZone',(spec.name||'image')+' (overflow zone)');
+canvas.add(ghost);
+}
+
+// manga_svg_2.py の描画順を再現する(comicllm issue #378)。
+// 通常コンテンツ → 浮きゴマ(zOrder昇順に白下地込みの一塊) → はみ出し延長ゾーン
+// → はみ出し擬音 → はみ出し大擬音 → はみ出し吹き出し(最前面)。
+function plApplyProjectRenderOrder(){
+const objs=canvas.getObjects().slice();
+const extrasOf=o=>(o&&o.projectLoaderExtras)||{};
+const floats=objs
+.filter(o=>o.isPanel&&(parseInt(extrasOf(o).zOrder,10)||0)>0)
+.sort((a,b)=>(parseInt(extrasOf(a).zOrder,10)||0)-(parseInt(extrasOf(b).zOrder,10)||0));
+for(const panel of floats){
+// 一塊 = 白下地 + コマ + guid連鎖の子(画像・吹き出し本体・テキスト) + 枠線ゴースト。
+// 延長ゾーンは常に後段のはみ出しパスで前面に出すため含めない。
+const unitGuids=new Set([panel.guid]);
+const unit=[];
+for(const o of objs){
+const ghostMember=o.projectLoaderGhostFor&&unitGuids.has(o.projectLoaderGhostFor)&&o.projectLoaderGhostKind!=='overflowZone';
+const childMember=!o.projectLoaderGhostFor&&o.relatedPoly&&unitGuids.has(o.relatedPoly);
+if(o===panel||ghostMember||childMember){
+unit.push(o);
+if(o.guid) unitGuids.add(o.guid);
+}
+}
+unit.forEach(o=>canvas.bringToFront(o));
+}
+const isOverflow=o=>!!extrasOf(o).overflow;
+const zones=objs.filter(o=>o.projectLoaderGhostKind==='overflowZone');
+const gions=objs.filter(o=>isOverflow(o)&&o.customType==='gion');
+const largeGions=objs.filter(o=>isOverflow(o)&&o.customType==='largeGion');
+const bubbles=[];
+for(const o of objs){
+if(isOverflow(o)&&isSpeechBubbleSVG(o)){
+bubbles.push(o);
+(o.guids||[]).forEach(g=>{
+const t=objs.find(x=>x.guid===g);
+if(t) bubbles.push(t);
+});
+}
+}
+[...zones,...gions,...largeGions,...bubbles].forEach(o=>canvas.bringToFront(o));
 }
 
 // 吹き出しグループを「本体シェイプ(speechBubbleSVG)」と「テキスト(通常のテキスト)」の
@@ -171,6 +382,9 @@ if(spec.name) bubble.name=spec.name;
 if(spec.relatedPoly) bubble.relatedPoly=spec.relatedPoly;
 // reSetSpeechBubbleTextがobj.guidsを参照するため必ず配列を持たせる。
 bubble.guids=(text&&text.guid)?[text.guid]:[];
+// グループspecの未知キー(overflow/sourceRef等)は本体シェイプに退避し、
+// 書き戻し時にグループspecへマージする(plSerializeBubbleGroup経由)。
+plCaptureExtras(bubble,spec);
 canvas.add(bubble);
 }
 if(text){
@@ -215,7 +429,10 @@ folderPickerLogger.warn('unsupported layer type',spec.type,spec);
 return null;
 }
 
-if(obj) applyMetaProps(obj,spec);
+if(obj){
+applyMetaProps(obj,spec);
+plCaptureExtras(obj,spec);
+}
 return obj;
 }
 
@@ -272,6 +489,15 @@ height:numOr(spec.clipPath.height,0),
 strokeWidth:0,
 absolutePositioned:true
 });
+}else{
+// パイプライン産の方言(comicllm issue #378): scaleX/clipPath が無く、
+// left/top/width/height が画像の実表示矩形を表す。width/height から
+// スケールを導出し(アスペクト非保存=SVGのpreserveAspectRatio:none相当)、
+// コマ窓(relatedPolyのコマ形状)でクリップする。
+if(spec.scaleX===undefined&&areaW&&img.width) img.scaleX=areaW/img.width;
+if(spec.scaleY===undefined&&areaH&&img.height) img.scaleY=areaH/img.height;
+const panel=plFindCanvasObjectByGuid(spec.relatedPoly);
+if(panel&&!spec.overflow) updateClipPath(img,panel);
 }
 }else if(areaW&&areaH&&img.width&&img.height){
 // アスペクト比を保ったままコマを埋める(cover)。長辺基準で倍率を決め余白を
@@ -284,7 +510,10 @@ img.top=ay+(areaH-img.height*scale)/2;
 // コマ枠内だけ表示する(画像オブジェクト自体は無傷=ひな形パネルと同じ)。
 // コマ領域(幾何矩形)を窓にする絶対配置clipPath。再読込時はupdateRectClipPathが
 // 再生成する。initialはaddJsonAsPageのsaveInitialStateで画像と同期させる。
+// コマからはみ出す要素(overflow: 擬音等)はクリップしない(comicllm issue #378)。
+if(!spec.overflow){
 img.clipPath=new fabric.Rect({left:ax,top:ay,width:areaW,height:areaH,strokeWidth:0,absolutePositioned:true});
+}
 }else if(areaW&&img.width){
 img.scaleX=img.scaleY=areaW/img.width;
 }else if(areaH&&img.height){
@@ -566,14 +795,19 @@ return true;
 
 function plSerializeNode(obj,F,guidMap){
 if(!plIsSerializable(obj)) return null;
-if(obj.isPanel) return plSerializePanel(obj,F,guidMap);
-if(isSpeechBubbleSVG(obj)) return plSerializeBubbleGroup(obj,F,guidMap);
+let spec;
+if(obj.isPanel) spec=plSerializePanel(obj,F,guidMap);
+else if(isSpeechBubbleSVG(obj)) spec=plSerializeBubbleGroup(obj,F,guidMap);
+else{
 const type=normalizeProjectLoaderType(obj);
-if(type==='image') return plSerializeImage(obj,F);
-if(type==='textbox'||type==='text'||type==='i-text'||type==='vertical-textbox') return plSerializeText(obj,F);
-if(type==='rect'||type==='polygon'||type==='path') return plSerializeShape(obj,F);
-if(type==='group') return plSerializeGenericGroup(obj,F,guidMap);
-return plSerializeBase(obj,F);
+if(type==='image') spec=plSerializeImage(obj,F);
+else if(type==='textbox'||type==='text'||type==='i-text'||type==='vertical-textbox') spec=plSerializeText(obj,F);
+else if(type==='rect'||type==='polygon'||type==='path') spec=plSerializeShape(obj,F);
+else if(type==='group') spec=plSerializeGenericGroup(obj,F,guidMap);
+else spec=plSerializeBase(obj,F);
+}
+// 未知キー(zOrder/bleedEdges/overflowClip/overflow/sourceRef 等)を復元する。
+return plMergeExtras(spec,obj);
 }
 
 // 共通プロパティ(scaleX/scaleY/originX/originY/preserveTransform/clipPathは出さない)。
@@ -628,6 +862,9 @@ spec.width=numOr(obj.width,0)*scaleX*F;
 spec.height=numOr(obj.height,0)*scaleY*F;
 copyProjectLoaderProp(spec,obj,'fill');
 copyProjectLoaderProp(spec,obj,'stroke');
+// 断ち切りコマはロード時にstrokeを透明化している(plAddBleedBorderGhost)ため、
+// 書き戻しでは元の色に戻す。
+if(obj.projectLoaderBleedStroke!==undefined) spec.stroke=obj.projectLoaderBleedStroke;
 spec.strokeWidth=numOr(obj.strokeWidth,0)*F;
 plSerializeStrokeStyle(spec,obj,F);
 if(type==='polygon'){
